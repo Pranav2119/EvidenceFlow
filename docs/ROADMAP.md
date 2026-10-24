@@ -18,7 +18,7 @@
 - [x] Day 1: Versioned PostgreSQL Documentation parser & chunker with SHA-256 hashes
 - [x] Day 2: Qdrant vector store setup with dense + BM25 hybrid search & version payload filters
 - [x] Day 3: Baseline LangGraph state machine (`Planner` -> `Retriever` -> `AnswerWriter` -> `L1Verifier`)
-- [ ] Day 4: Standardized Abstention mechanism & input/output guardrails v1
+- [x] Day 4: Standardized Abstention mechanism & input/output guardrails v1
 - [ ] Day 5: PostgreSQL checkpointer, step ledger, and claim-evidence audit trail tables
 - [ ] Day 6: FastMCP `corpus-mcp` read-only server
 - [ ] Day 7: Benchmark v1 with deterministic scoring & baseline measurements recorded in `experiments.md`

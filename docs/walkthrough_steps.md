@@ -227,3 +227,40 @@ This document records every concrete step, command executed, files modified/crea
 - **Test A (LangGraph Edge Validation)**: Injected `builder.add_edge("planner", "retriever_typo")`. LangGraph threw `ValueError: Found edge ending at unknown node 'retriever_typo'` during `.compile()`.
 - **Test B (L1 Verifier Hallucination Detection)**: Injected a fake citation `[^pg16-fake-chunk-999]` into the draft answer. Verifier immediately failed L1 check: `L1 Passed: False`, `Is Abstained: True`, `Abstention Reason: L1 Failed: Hallucinated citation(s) not in retrieved evidence: ['pg16-fake-chunk-999']`.
 
+---
+
+## Day 4: Standardized Abstention Mechanism & Input/Output Guardrails v1
+
+### Step 4.1: Feature Branch Isolation
+- **Branch**: eat/day-4-guardrails-abstention (production trunk-based development pattern).
+- **Goal**: Implement deterministic input security guardrails, retrieval threshold and lexical grounding filters, L1.5 value-presence verification, and standardized abstention routing.
+
+### Step 4.2: Input Guardrails (input_guardrail.py)
+- **File**: src/evidenceflow/guardrails/input_guardrail.py
+- **Features**:
+  - Regex-based adversarial prompt injection and jailbreak detection (ignore previous instructions, dan mode, system prompt override).
+  - Domain scope validation (rejects casual greetings, trivia, sports, off-topic requests).
+  - Fast-fails before vector search or LLM generation (0.05ms latency, .00 cost).
+
+### Step 4.3: Retrieval Guardrails (
+etriever.py)
+- **File**: src/evidenceflow/graph/nodes/retriever.py
+- **Features**:
+  - Raw similarity score thresholding (RETRIEVAL_SCORE_THRESHOLD = 0.60).
+  - Distinctive keyword grounding check: ensures core non-stopword query tokens actually appear in retrieved passages, preventing false semantic matches for non-existent features (e.g., 'quantum hyperthreading').
+
+### Step 4.4: L1.5 Statement Value Verification (erifier.py)
+- **File**: src/evidenceflow/graph/nodes/verifier.py
+- **Features**:
+  - Deterministic check extracting specific numeric constants and memory/time quantities cited in each statement.
+  - Asserts that claimed numbers/units actually exist verbatim in the cited chunk's content, preventing subtle value divergence hallucinations.
+
+### Step 4.5: Standardized Abstention Node & Dynamic Routing (bstention.py & workflow.py)
+- **Files**:
+  - src/evidenceflow/graph/nodes/abstention.py: Formats standardized enterprise-compliant abstention responses with explicit version scope and failure rationale.
+  - src/evidenceflow/graph/workflow.py: Wires LangGraph conditional edges routing failed checks directly to bstention_node -> END.
+
+### Step 4.6: Automated Guardrail Test Suite (	est_guardrails.py)
+- **File**: 	ests/test_guardrails.py
+- **Command**: uv run pytest tests/test_guardrails.py -v
+- **Verification**: 20/20 test cases passing in 3.19s across injection, scope rejection, unanswerable queries, and L1/L1.5 verifiers.
