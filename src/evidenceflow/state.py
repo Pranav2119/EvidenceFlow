@@ -36,6 +36,7 @@ class EvidenceFlowState(BaseModel):
     # --- Deterministic Verification & Abstention ---
     l1_passed: bool = Field(default=False, description="Whether L1 deterministic citation-existence check passed")
     is_abstained: bool = Field(default=False, description="True if evidence is insufficient or question is out of scope")
+    abstention_code: Optional[str] = Field(default=None, description="Categorical refusal code (e.g. INJECTION, OUT_OF_SCOPE, MISSING_KEYWORD, LOW_SCORE, UNSUPPORTED_VERSION, FAKE_CITATION, VALUE_MISMATCH)")
     abstention_reason: Optional[str] = Field(default=None, description="Structured rationale explaining why the system abstained")
 
     # --- Audit Trail ---

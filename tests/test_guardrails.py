@@ -25,8 +25,9 @@ from evidenceflow.state import EvidenceFlowState, Citation
     ],
 )
 def test_prompt_injection_rejection(injection_prompt: str):
-    is_safe, reason = evaluate_input_guardrails(injection_prompt)
+    is_safe, code, reason = evaluate_input_guardrails(injection_prompt)
     assert not is_safe
+    assert code == "INJECTION"
     assert "Security Guardrail" in reason
 
 
@@ -43,8 +44,9 @@ def test_prompt_injection_rejection(injection_prompt: str):
     ],
 )
 def test_off_domain_query_rejection(off_domain_query: str):
-    is_safe, reason = evaluate_input_guardrails(off_domain_query)
+    is_safe, code, reason = evaluate_input_guardrails(off_domain_query)
     assert not is_safe
+    assert code == "OUT_OF_SCOPE"
     assert "Scope Guardrail" in reason
 
 
@@ -60,8 +62,9 @@ def test_off_domain_query_rejection(off_domain_query: str):
     ],
 )
 def test_valid_technical_queries_pass(valid_query: str):
-    is_safe, reason = evaluate_input_guardrails(valid_query)
+    is_safe, code, reason = evaluate_input_guardrails(valid_query)
     assert is_safe
+    assert code is None
     assert reason is None
 
 
@@ -143,6 +146,93 @@ def test_l1_5_accurate_value_passes():
     assert result["l1_passed"] is True
     assert result["is_abstained"] is False
     assert result["citations"][0].is_verified is True
+
+
+# --- 8. L2 Verifier: Setting Proximity Check (Multi-Value Chunk Spoofing) ---
+
+def test_l2_proximity_mismatch_fails():
+    """
+    If a chunk mentions both 200 (for vacuum_cost_limit) and 400 (for max_connections),
+    the model must not pass if it claims vacuum_cost_limit is 400.
+    """
+    passage = {
+        "chunk_id": "pg16-multi-setting",
+        "content": (
+            "vacuum_cost_limit (integer) Sets the vacuum cost accumulation limit. "
+            "The default value is 200. "
+            "Each vacuum worker thread accumulates cost units up to this limit before sleeping. "
+            "This setting helps prevent vacuum operations from starving active client queries. "
+            "Separately, in another section: "
+            "max_connections (integer) Sets the maximum concurrent client connections. "
+            "The default value is 400."
+        ),
+    }
+    state = EvidenceFlowState(
+        query="What is vacuum_cost_limit?",
+        retrieved_passages=[passage],
+        # 400 is in the chunk, but NOT associated with vacuum_cost_limit!
+        draft_answer="In Postgres 16, vacuum_cost_limit defaults to 400 [^pg16-multi-setting].",
+        citations=[Citation(chunk_id="pg16-multi-setting", doc_name="doc", section="sec", quote="")],
+    )
+    result = verifier_node(state)
+    assert result["l1_passed"] is False
+    assert result["is_abstained"] is True
+    assert result["abstention_code"] == "VALUE_MISMATCH"
+    assert "vacuum_cost_limit" in result["abstention_reason"]
+
+
+# --- 9. L2 Verifier: Domain Enum & Boolean Verification ---
+
+def test_l2_enum_check_fails_and_passes():
+    passage = {
+        "chunk_id": "pg16-wal-level",
+        "content": "wal_level (enum) Controls how much information is written to WAL. The default value is replica.",
+    }
+
+    # Accurate enum passes
+    state_pass = EvidenceFlowState(
+        query="What is wal_level?",
+        retrieved_passages=[passage],
+        draft_answer="The wal_level default is replica [^pg16-wal-level].",
+        citations=[Citation(chunk_id="pg16-wal-level", doc_name="doc", section="sec", quote="")],
+    )
+    res_pass = verifier_node(state_pass)
+    assert res_pass["l1_passed"] is True
+    assert res_pass["is_abstained"] is False
+
+    # Hallucinated enum fails
+    state_fail = EvidenceFlowState(
+        query="What is wal_level?",
+        retrieved_passages=[passage],
+        draft_answer="The wal_level default is logical [^pg16-wal-level].",
+        citations=[Citation(chunk_id="pg16-wal-level", doc_name="doc", section="sec", quote="")],
+    )
+    res_fail = verifier_node(state_fail)
+    assert res_fail["l1_passed"] is False
+    assert res_fail["is_abstained"] is True
+    assert res_fail["abstention_code"] == "VALUE_MISMATCH"
+
+
+# --- 10. L2 Verifier: Unit Equivalence Normalization ---
+
+def test_l2_unit_equivalence_passes():
+    """
+    Treats equal values as identical (e.g. 1min == 60s, 1024kB == 1MB).
+    """
+    passage = {
+        "chunk_id": "pg16-archive",
+        "content": "archive_timeout (integer) Forces server to switch to a new WAL file. Default is 1min.",
+    }
+    # LLM states 60s instead of 1min
+    state = EvidenceFlowState(
+        query="What is archive_timeout?",
+        retrieved_passages=[passage],
+        draft_answer="The archive_timeout defaults to 60s [^pg16-archive].",
+        citations=[Citation(chunk_id="pg16-archive", doc_name="doc", section="sec", quote="")],
+    )
+    result = verifier_node(state)
+    assert result["l1_passed"] is True
+    assert result["is_abstained"] is False
 
 
 # --- 8. Standardized Abstention Response Formatting ---
