@@ -14,6 +14,7 @@ import json
 import logging
 from pathlib import Path
 import sys
+import time
 from typing import Any, Dict, List, Optional
 
 from evidenceflow.config import get_settings
@@ -37,6 +38,7 @@ def run_single_evaluation(
     questions: List[Dict[str, Any]],
     threshold: Optional[float] = None,
     verbose: bool = False,
+    delay_seconds: float = 1.5,
 ) -> Dict[str, Any]:
     """
     Executes all questions through run_pipeline() at a given threshold.
@@ -120,6 +122,9 @@ def run_single_evaluation(
         if verbose:
             status_icon = "PASS" if is_correct else f"FAIL ({error_type})"
             print(f"[{idx:02d}/40] {qid:<5} | {category:<18} | {status_icon:<18} | {query[:45]}...", flush=True)
+
+        if delay_seconds > 0 and idx < len(questions):
+            time.sleep(delay_seconds)
 
     # Restore original threshold
     settings.RETRIEVAL_SCORE_THRESHOLD = original_threshold
@@ -248,6 +253,7 @@ def main():
     parser.add_argument("--threshold", type=float, default=None, help="Specific cosine threshold to evaluate")
     parser.add_argument("--output", type=Path, default=None, help="Output results JSON path")
     parser.add_argument("--verbose", action="store_true", help="Print per-question trace")
+    parser.add_argument("--delay", type=float, default=1.5, help="Delay in seconds between questions (default: 1.5s)")
 
     args = parser.parse_args()
 
@@ -261,7 +267,7 @@ def main():
                 json.dump(sweep_results, f, indent=2)
             print(f"Saved sweep results to {args.output}")
     else:
-        summary = run_single_evaluation(questions, threshold=args.threshold, verbose=args.verbose)
+        summary = run_single_evaluation(questions, threshold=args.threshold, verbose=args.verbose, delay_seconds=args.delay)
         print_single_report(summary)
         if args.output:
             with open(args.output, "w", encoding="utf-8") as f:
