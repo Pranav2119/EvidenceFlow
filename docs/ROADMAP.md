@@ -1,5 +1,16 @@
 # EvidenceFlow AI: Project Roadmap & Progress Tracker
 
+## Learning Mode & Execution Protocol
+Every Day/Task strictly follows this 3-phase cadence:
+1. **Upfront Grounding (Start)**: 3-5 line concept explanation + concrete real-world scenario BEFORE writing code or running shell commands.
+2. **Step-by-Step Verifiable Build**: Isolated feature branches (`feat/day-X-feature-name`), surgical diffs, and automated tests.
+3. **Closing Retrospective (End)**:
+   - 2-3 Explain-back questions for interview defense.
+   - Comprehensive detailed summary with real-world examples, input/output traces, and failure modes caught.
+   - Push to feature branch and open GitHub PR.
+
+---
+
 ## Design & Specification Stages
 - [x] **Stage 1**: Concept, USP, and Architectural Justifications (`docs/design/01_concept_and_usp.md`)
 - [x] **Stage 2**: System Architecture, Multi-turn Flow, Neo4j Graph, and 5-Layer Cache (`docs/design/02_architecture.md`)
