@@ -219,6 +219,9 @@ This document records every concrete step, command executed, files modified/crea
   - Model synthesized technical response with inline `[^chunk_id]` markdown footnotes.
   - Verifier confirmed 100% citation entailment with `L1 Verification Result: PASSED`, `Is Abstained: False`.
   - Immutable step ledger populated with 4 audit entries.
+  - **Key Production Observations**:
+    1. *The Exact-Name Failure Mode*: In the wal_level query, the actual target chunk wal-wal-level ranked 5th out of 5 (Score: 0.7396), trailing broad semantic neighbors (max_wal_size: 0.7722, wal_debug: 0.7593). With top-k=3, dense search would have dropped the answer. This confirms the classic 'exact-name' blind spot of dense embeddings and proves why BM25 sparse hybrid retrieval is mandatory for technical documentation.
+    2. *L1 Scope & Interview Defense*: The baseline L1 check is accurately termed a *deterministic citation existence and provenance check* (guaranteeing every cited chunk exists in the retrieved evidence set). It prevents citation hallucination. The next level of defense (Day 4) verifies specific parameter values and tokens directly inside the chunk text to guard against subtle claim divergence.
 
 ### Step 3.5: Break It On Purpose (Edge Typo & Citation Hallucination)
 - **Test A (LangGraph Edge Validation)**: Injected `builder.add_edge("planner", "retriever_typo")`. LangGraph threw `ValueError: Found edge ending at unknown node 'retriever_typo'` during `.compile()`.

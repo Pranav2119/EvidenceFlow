@@ -17,7 +17,7 @@ This document compiles all technical explain-back and architectural interview qu
 3. Why does splitting by markdown/HTML DOM headers preserve more semantic context than fixed 512-character token slicing?
 
 ### Day 2: Qdrant Vector Store Setup & Version-Scoped Retrieval
-1. Why does hybrid retrieval (BM25 + Dense) beat pure dense vector search for database configuration documentation?
+1. Why does hybrid retrieval (BM25 + Dense) beat pure dense vector search for database configuration documentation? *(Defense case study: Recall the wal_level trace where dense search ranked the exact chunk 5th out of 5 behind broad WAL neighbors, risking recall failure if top-k < 5).*
 2. How does Qdrant's filterable HNSW (where the filter is applied during graph traversal) differ from standard pre-filtering or post-filtering, and why does post-filtering cause "recall collapse"?
 3. What is the difference between Cosine Distance, Dot Product, and Euclidean Distance when comparing normalized embeddings?
 
