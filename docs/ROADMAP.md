@@ -16,8 +16,8 @@
 ### Tier 1: Measure First (Baseline Pipeline & Corpus Ingestion)
 - [x] Day 0: Tooling installs (pinned uv/Python, Docker Compose, Git init, .env validation)
 - [x] Day 1: Versioned PostgreSQL Documentation parser & chunker with SHA-256 hashes
-- [ ] Day 2: Qdrant vector store setup with dense + BM25 hybrid search & version payload filters
-- [ ] Day 3: Baseline LangGraph state machine (`Planner` -> `Retriever` -> `AnswerWriter` -> `L1Verifier`)
+- [x] Day 2: Qdrant vector store setup with dense + BM25 hybrid search & version payload filters
+- [x] Day 3: Baseline LangGraph state machine (`Planner` -> `Retriever` -> `AnswerWriter` -> `L1Verifier`)
 - [ ] Day 4: Standardized Abstention mechanism & input/output guardrails v1
 - [ ] Day 5: PostgreSQL checkpointer, step ledger, and claim-evidence audit trail tables
 - [ ] Day 6: FastMCP `corpus-mcp` read-only server

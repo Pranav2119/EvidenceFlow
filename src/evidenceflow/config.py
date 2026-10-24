@@ -30,7 +30,7 @@ class Settings(BaseSettings):
         description="Google AI Studio Gemini API Key",
     )
     GEMINI_MODEL: str = Field(
-        default="gemini-2.5-flash",
+        default="gemini-3.5-flash-lite",
         description="Default Gemini model family for agent nodes",
     )
 
@@ -66,6 +66,12 @@ class Settings(BaseSettings):
             f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
         )
 
+    # --- Embedding Provider Settings ---
+    EMBEDDING_PROVIDER: str = Field(
+        default="fastembed",
+        description="Embedding provider: 'fastembed' (local 384-dim, 0 API key) or 'gemini' (768-dim, requires GEMINI_API_KEY)",
+    )
+
     # --- Qdrant Vector Store Settings (Dense + Sparse Hybrid) ---
     QDRANT_HOST: str = Field(
         default="localhost",
@@ -79,10 +85,12 @@ class Settings(BaseSettings):
         default=6334,
         description="Qdrant gRPC port for high-throughput vector queries",
     )
-    QDRANT_COLLECTION: str = Field(
-        default="evidenceflow_passages",
-        description="Primary passage chunk collection name",
-    )
+
+    @computed_field
+    @property
+    def QDRANT_COLLECTION(self) -> str:
+        """Dynamic collection name per embedding provider to prevent vector dimension mismatches."""
+        return f"evidenceflow_passages_{self.EMBEDDING_PROVIDER}"
 
     # --- Neo4j Graph Database Settings (Conversational Memory & Contradictions) ---
     NEO4J_URI: str = Field(

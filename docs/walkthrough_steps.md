@@ -130,3 +130,97 @@ This document records every concrete step, command executed, files modified/crea
   uv run python -m evidenceflow.ingestion.diff_chunks --cross-version 15 16
   # Result: 265 unchanged parameters, 19 changed parameters, 43 added, 31 removed
   ```
+
+---
+
+## Day 2: Qdrant Hybrid Vector Store Setup with Dense & BM25 Payloads
+
+### Step 2.1: Dual-Provider Embedding Architecture (`embeddings.py`)
+- **Goal**: Support both local, zero-cost FastEmbed (`BAAI/bge-small-en-v1.5`, 384-dim, no API key needed) and Gemini API (`text-embedding-004`, 768-dim) with separate collections to prevent vector dimensionality mismatches.
+- **Files Created/Updated**:
+  - [`src/evidenceflow/storage/embeddings.py`](file:///src/evidenceflow/storage/embeddings.py)
+  - [`src/evidenceflow/config.py`](file:///src/evidenceflow/config.py): Added `EMBEDDING_PROVIDER` (default `"fastembed"`) and dynamic `@computed_field` for `QDRANT_COLLECTION`.
+  - [`.env.example`](file:///.env.example): Documented `EMBEDDING_PROVIDER=fastembed`.
+- **Command Executed**:
+  ```powershell
+  uv add qdrant-client fastembed
+  ```
+- **Verification**: `qdrant-client: 1.20.0` and `fastembed: 0.9.0` verified.
+
+### Step 2.2: Qdrant Collection Initialization & Payload Indexing (`init_qdrant.py`)
+- **Goal**: Create Qdrant collection with cosine distance and build 5 payload indexes (`version`, `doc_name`, `section`, `title`, and full-text `content`) for single-stage filtered HNSW traversal.
+- **File Created**: [`src/evidenceflow/storage/init_qdrant.py`](file:///src/evidenceflow/storage/init_qdrant.py)
+- **Command Executed**:
+  ```powershell
+  uv run python -m evidenceflow.storage.init_qdrant --recreate
+  ```
+- **Verification**: Collection `evidenceflow_passages_fastembed` created with status `green`, 384 vector dimensions, and 5 payload schema indexes.
+
+### Step 2.3: Batch Vector Indexing (`index_qdrant.py`)
+- **Goal**: Generate dense embeddings in batches of 64 and upsert all 1,581 chunks into Qdrant using deterministic UUIDv5 point identifiers.
+- **File Created**: [`src/evidenceflow/ingestion/index_qdrant.py`](file:///src/evidenceflow/ingestion/index_qdrant.py)
+- **Command Executed**:
+  ```powershell
+  uv run python -m evidenceflow.ingestion.index_qdrant --recreate
+  ```
+- **Verification**: Qdrant reports **1,581 points** stored in `evidenceflow_passages_fastembed`. Visible live on local dashboard at `http://localhost:6333/dashboard`.
+
+### Step 2.4: Version-Scoped Search Interface (`qdrant_client.py`)
+- **Goal**: Build retrieval client applying single-stage version payload filters (`models.Filter`) during HNSW graph traversal.
+- **File Created**: [`src/evidenceflow/storage/qdrant_client.py`](file:///src/evidenceflow/storage/qdrant_client.py)
+- **Command Executed**:
+  ```powershell
+  uv run python -m evidenceflow.storage.qdrant_client --query "vacuum_cost_limit" --version 16
+  ```
+- **Verification**: Returned top-ranked chunks for `autovacuum_vacuum_cost_limit` and `vacuum_cost_limit` in PostgreSQL 16. Asserted 100% of returned hits have `version == "16"` (zero version bleed).
+
+---
+
+## Day 3: Baseline LangGraph State Machine (Planner -> Retriever -> AnswerWriter -> L1Verifier)
+
+### Step 3.1: LangGraph & LangChain Dependency Installation
+- **Goal**: Add official `langgraph` and `langchain-core` pinned dependencies to manage workflow state.
+- **Command Executed**:
+  ```powershell
+  uv add "langgraph>=0.2.0" "langchain-core>=0.3.0"
+  ```
+- **Verification**: `langgraph: 1.2.17` and `langchain-core: 1.7.0` installed cleanly.
+
+### Step 3.2: Pydantic v2 Execution State Schema (`state.py`)
+- **Goal**: Define strongly-typed `EvidenceFlowState` and `Citation` models passing through every graph node with runtime type enforcement.
+- **File Created**: [`src/evidenceflow/state.py`](file:///src/evidenceflow/state.py)
+- **Key Fields**: `query`, `target_version`, `thread_id`, `plan`, `retrieved_passages`, `draft_answer`, `citations`, `l1_passed`, `is_abstained`, `abstention_reason`, `audit_trail`.
+- **Verification**: Instantiation and validation tested via Python unit script.
+
+### Step 3.3: Baseline Pipeline Node Implementations (`src/evidenceflow/graph/nodes/`)
+- **Goal**: Implement 4 discrete, testable nodes with single responsibilities:
+  1. `planner.py`: Extracts target PostgreSQL version (e.g. `14`, `15`, `16`) from query or state and generates targeted retrieval sub-queries.
+  2. `retriever.py`: Executes version-filtered vector search in Qdrant across plan sub-queries, deduplicates chunk IDs, and sorts by score.
+  3. `answer_writer.py`: Generates strictly grounded technical responses citing source chunk IDs `[^chunk_id]` via Gemini API (`gemini-3.5-flash-lite`) with zero-cost deterministic fallback.
+  4. `verifier.py`: Pure deterministic Python L1 verification (Zero LLM calls). Ensures every cited `[^chunk_id]` actually exists in `retrieved_passages` and catches citation hallucinations.
+- **Files Created**:
+  - [`src/evidenceflow/graph/nodes/__init__.py`](file:///src/evidenceflow/graph/nodes/__init__.py)
+  - [`src/evidenceflow/graph/nodes/planner.py`](file:///src/evidenceflow/graph/nodes/planner.py)
+  - [`src/evidenceflow/graph/nodes/retriever.py`](file:///src/evidenceflow/graph/nodes/retriever.py)
+  - [`src/evidenceflow/graph/nodes/answer_writer.py`](file:///src/evidenceflow/graph/nodes/answer_writer.py)
+  - [`src/evidenceflow/graph/nodes/verifier.py`](file:///src/evidenceflow/graph/nodes/verifier.py)
+- **Verification**: Each node tested in isolation and sequentially.
+
+### Step 3.4: StateGraph Assembly & Compilation (`workflow.py`)
+- **Goal**: Wire linear DAG topology: `START -> planner -> retriever -> answer_writer -> verifier -> END`.
+- **File Created**: [`src/evidenceflow/graph/workflow.py`](file:///src/evidenceflow/graph/workflow.py)
+- **Commands Executed**:
+  ```powershell
+  uv run python -m evidenceflow.graph.workflow --query "What is vacuum_cost_limit in Postgres 16?" --version 16
+  uv run python -m evidenceflow.graph.workflow --query "What is wal_level in Postgres 16?" --version 16
+  ```
+- **Verification Output**:
+  - Retrieved 5 verified passages from Qdrant.
+  - Model synthesized technical response with inline `[^chunk_id]` markdown footnotes.
+  - Verifier confirmed 100% citation entailment with `L1 Verification Result: PASSED`, `Is Abstained: False`.
+  - Immutable step ledger populated with 4 audit entries.
+
+### Step 3.5: Break It On Purpose (Edge Typo & Citation Hallucination)
+- **Test A (LangGraph Edge Validation)**: Injected `builder.add_edge("planner", "retriever_typo")`. LangGraph threw `ValueError: Found edge ending at unknown node 'retriever_typo'` during `.compile()`.
+- **Test B (L1 Verifier Hallucination Detection)**: Injected a fake citation `[^pg16-fake-chunk-999]` into the draft answer. Verifier immediately failed L1 check: `L1 Passed: False`, `Is Abstained: True`, `Abstention Reason: L1 Failed: Hallucinated citation(s) not in retrieved evidence: ['pg16-fake-chunk-999']`.
+
