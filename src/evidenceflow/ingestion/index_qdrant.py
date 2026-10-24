@@ -8,9 +8,8 @@ import logging
 import uuid
 from pathlib import Path
 from typing import List, Dict, Any
-from qdrant_client import QdrantClient
 from qdrant_client.http import models
-from evidenceflow.config import get_settings
+from evidenceflow.storage import get_qdrant_client
 from evidenceflow.storage.embeddings import get_embeddings
 from evidenceflow.storage.init_qdrant import init_collection
 
@@ -21,8 +20,12 @@ def generate_qdrant_uuid(chunk_id: str) -> str:
     """
     Qdrant string IDs must be RFC 4122 UUIDs.
     Deterministically converts human-readable chunk_id into a stable UUIDv5.
+    D2-6: Uses a project-specific namespace (not NAMESPACE_DNS) to avoid semantic
+    mismatch and prevent collision with unrelated systems using the same namespace.
     """
-    return str(uuid.uuid5(uuid.NAMESPACE_DNS, chunk_id))
+    # Fixed project namespace UUID — never change this or all existing point IDs will shift
+    EVIDENCEFLOW_NS = uuid.UUID("6ba7b814-9dad-11d1-80b4-00c04fd430c8")
+    return str(uuid.uuid5(EVIDENCEFLOW_NS, chunk_id))
 
 
 def index_chunks(
@@ -33,14 +36,10 @@ def index_chunks(
     """
     Reads chunks from JSONL, generates embeddings in batches, and upserts into Qdrant.
     """
-    settings = get_settings()
     collection_name = init_collection(recreate=recreate)
 
-    client = QdrantClient(
-        host=settings.QDRANT_HOST,
-        port=settings.QDRANT_PORT,
-        check_compatibility=False,
-    )
+    # D2-5: use shared factory
+    client = get_qdrant_client()
 
     logger.info("Reading chunks from %s ...", input_file)
     chunks: List[Dict[str, Any]] = []

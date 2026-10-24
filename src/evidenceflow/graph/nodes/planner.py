@@ -10,14 +10,15 @@ from evidenceflow.state import EvidenceFlowState
 
 def extract_target_version(query: str, current_version: Optional[str] = None) -> Optional[str]:
     """
-    Extracts explicit PostgreSQL version from query (e.g. 'Postgres 16', 'v15', 'PostgreSQL 14').
+    Extracts explicit PostgreSQL version from query (e.g. 'Postgres 16', 'v15', 'PostgreSQL 14', 'version 15').
     If none found in query, preserves current_version or defaults to '16'.
+    D3-7 fix: Requires version prefix keywords to avoid false matching on bare numeric parameters.
     """
     if current_version:
         return str(current_version)
 
-    # Regex matching "postgres 16", "postgresql 15", "pg14", "v16", "version 15"
-    match = re.search(r"\b(?:postgres(?:ql)?|pg|v|version)?\s*(14|15|16)\b", query, re.IGNORECASE)
+    # Require explicit prefix: postgres, postgresql, pg, v, version, or release
+    match = re.search(r"\b(?:postgres(?:ql)?|pg|v|version|release)\s*(14|15|16)\b", query, re.IGNORECASE)
     if match:
         return match.group(1)
 
@@ -47,10 +48,11 @@ def planner_node(state: EvidenceFlowState) -> Dict[str, Any]:
     """
     LangGraph node: Analyzes user query, infers target PostgreSQL version,
     and formulates discrete retrieval sub-queries.
+    D3-2 fix: Direct Pydantic attribute access instead of redundant hasattr checks.
     """
-    query = state.query if hasattr(state, "query") else state["query"]
-    existing_version = state.target_version if hasattr(state, "target_version") else state.get("target_version")
-    existing_audit = list(state.audit_trail if hasattr(state, "audit_trail") else state.get("audit_trail", []))
+    query = state.query
+    existing_version = state.target_version
+    existing_audit = list(state.audit_trail)
 
     target_version = extract_target_version(query, existing_version)
     plan = generate_subqueries(query)

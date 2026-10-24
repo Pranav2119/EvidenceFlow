@@ -31,10 +31,10 @@ class EvidenceFlowState(BaseModel):
 
     # --- Generation & Citations ---
     draft_answer: str = Field(default="", description="The generated technical response containing citation markers [^chunk_id]")
-    citations: List[Dict[str, Any]] = Field(default_factory=list, description="List of extracted citation claims mapped to chunk IDs")
+    citations: List[Citation] = Field(default_factory=list, description="Verified citation objects mapped to retrieved chunk IDs")
 
     # --- Deterministic Verification & Abstention ---
-    l1_passed: bool = Field(default=False, description="Whether L1 deterministic quote-entailment check passed")
+    l1_passed: bool = Field(default=False, description="Whether L1 deterministic citation-existence check passed")
     is_abstained: bool = Field(default=False, description="True if evidence is insufficient or question is out of scope")
     abstention_reason: Optional[str] = Field(default=None, description="Structured rationale explaining why the system abstained")
 

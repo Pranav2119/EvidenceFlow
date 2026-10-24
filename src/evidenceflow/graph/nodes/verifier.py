@@ -1,25 +1,30 @@
 """
-verifier.py: Deterministic L1 Groundedness and Citation Verifier.
+verifier.py: Deterministic L1 Citation Existence and Provenance Verifier.
 Executes pure Python verification (ZERO LLM calls) to guarantee that every
 cited chunk exists in retrieved evidence and that claims do not hallucinate citations.
 """
 
 import re
-from typing import Any, Dict, List
-from evidenceflow.state import EvidenceFlowState
+from typing import Any, Dict, List, Union
+from evidenceflow.state import EvidenceFlowState, Citation
 
 
 def verifier_node(state: EvidenceFlowState) -> Dict[str, Any]:
     """
-    LangGraph node: Deterministically validates citations and factual entailment.
-    Fails L1 verification if any cited chunk is hallucinated or if an ungrounded answer is produced.
+    LangGraph node: Deterministic citation existence and provenance check.
+    Verifies that every [^chunk_id] marker in the draft answer references a chunk
+    that was actually retrieved in context. Prevents citation hallucinations.
+    (Note: Statement-level value presence and NLI entailment are handled in Day 4 and Tier 3).
+    D3-2 fix: Direct Pydantic attribute access.
+    D3-4 fix: Handles strongly-typed Citation models.
+    D3-6 fix: Accurate docstring scope.
     """
-    draft_answer = state.draft_answer if hasattr(state, "draft_answer") else state.get("draft_answer", "")
-    citations = list(state.citations if hasattr(state, "citations") else state.get("citations", []))
-    passages = list(state.retrieved_passages if hasattr(state, "retrieved_passages") else state.get("retrieved_passages", []))
-    is_abstained = state.is_abstained if hasattr(state, "is_abstained") else state.get("is_abstained", False)
-    abstention_reason = state.abstention_reason if hasattr(state, "abstention_reason") else state.get("abstention_reason")
-    existing_audit = list(state.audit_trail if hasattr(state, "audit_trail") else state.get("audit_trail", []))
+    draft_answer = state.draft_answer
+    citations = list(state.citations)
+    passages = list(state.retrieved_passages)
+    is_abstained = state.is_abstained
+    abstention_reason = state.abstention_reason
+    existing_audit = list(state.audit_trail)
 
     # If already abstained by planner or answer_writer, pass through
     if is_abstained:
@@ -72,13 +77,17 @@ def verifier_node(state: EvidenceFlowState) -> Dict[str, Any]:
             "audit_trail": existing_audit + [audit_entry],
         }
 
-    # Mark citations as verified
-    updated_citations = []
+    # D3-4: Mark Citation models or dicts as verified
+    updated_citations: List[Union[Citation, Dict[str, Any]]] = []
     for c in citations:
-        c_copy = dict(c)
-        if c_copy["chunk_id"] in retrieved_chunk_ids:
-            c_copy["is_verified"] = True
-        updated_citations.append(c_copy)
+        if isinstance(c, Citation):
+            is_valid = c.chunk_id in retrieved_chunk_ids
+            updated_citations.append(c.model_copy(update={"is_verified": is_valid}))
+        else:
+            c_copy = dict(c)
+            if c_copy.get("chunk_id") in retrieved_chunk_ids:
+                c_copy["is_verified"] = True
+            updated_citations.append(c_copy)
 
     audit_entry = {
         "node": "verifier",

@@ -4,9 +4,9 @@ init_qdrant.py: Initializes Qdrant collection and version-filtered payload index
 
 import argparse
 import logging
-from qdrant_client import QdrantClient
 from qdrant_client.http import models
 from evidenceflow.config import get_settings
+from evidenceflow.storage import get_qdrant_client
 from evidenceflow.storage.embeddings import get_vector_dimension
 
 logger = logging.getLogger(__name__)
@@ -20,30 +20,31 @@ def init_collection(recreate: bool = False) -> str:
     collection_name = settings.QDRANT_COLLECTION
     dim = get_vector_dimension()
 
-    client = QdrantClient(
-        host=settings.QDRANT_HOST,
-        port=settings.QDRANT_PORT,
-        check_compatibility=False,
-    )
+    # D2-5: use shared factory — one place to change host/port/auth
+    client = get_qdrant_client()
 
     existing = [c.name for c in client.get_collections().collections]
 
     if collection_name in existing:
         if recreate:
-            logger.info("Collection '%s' exists. Recreating...", collection_name)
-            client.delete_collection(collection_name)
+            logger.info("Collection '%s' exists. Recreating atomically...", collection_name)
+            # D2-4: recreate_collection is atomic delete+create — avoids race on eventual-consistent backends
+            client.recreate_collection(
+                collection_name=collection_name,
+                vectors_config=models.VectorParams(size=dim, distance=models.Distance.COSINE),
+            )
         else:
             logger.info("Collection '%s' already exists. Use --recreate to rebuild.", collection_name)
             return collection_name
-
-    logger.info(
-        "Creating collection '%s' with dimension=%d (provider: %s, distance: COSINE)...",
-        collection_name, dim, settings.EMBEDDING_PROVIDER
-    )
-    client.create_collection(
-        collection_name=collection_name,
-        vectors_config=models.VectorParams(size=dim, distance=models.Distance.COSINE),
-    )
+    else:
+        logger.info(
+            "Creating collection '%s' with dimension=%d (provider: %s, distance: COSINE)...",
+            collection_name, dim, settings.EMBEDDING_PROVIDER
+        )
+        client.create_collection(
+            collection_name=collection_name,
+            vectors_config=models.VectorParams(size=dim, distance=models.Distance.COSINE),
+        )
 
     # Create payload indexes for single-stage filtered HNSW traversal
     indexed_keyword_fields = ["version", "doc_name", "section", "title"]

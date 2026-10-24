@@ -5,9 +5,9 @@ qdrant_client.py: Search client interface for Qdrant with single-stage version p
 import argparse
 import logging
 from typing import List, Dict, Any, Optional
-from qdrant_client import QdrantClient
 from qdrant_client.http import models
 from evidenceflow.config import get_settings
+from evidenceflow.storage import get_qdrant_client
 from evidenceflow.storage.embeddings import get_embedding
 
 logger = logging.getLogger(__name__)
@@ -20,11 +20,8 @@ class EvidenceQdrantClient:
 
     def __init__(self):
         self.settings = get_settings()
-        self.client = QdrantClient(
-            host=self.settings.QDRANT_HOST,
-            port=self.settings.QDRANT_PORT,
-            check_compatibility=False,
-        )
+        # D2-5: use shared factory — connection params in one place
+        self.client = get_qdrant_client()
         self.collection_name = self.settings.QDRANT_COLLECTION
 
     def search(
@@ -75,6 +72,19 @@ class EvidenceQdrantClient:
         return results
 
 
+# D3-3: Module-level singleton — one connection pool shared across all retriever_node calls.
+# Never reassigned after first use; safe for single-process benchmark and API workloads.
+_qdrant_client_instance: Optional[EvidenceQdrantClient] = None
+
+
+def get_evidence_qdrant_client() -> EvidenceQdrantClient:
+    """Returns the shared EvidenceQdrantClient singleton."""
+    global _qdrant_client_instance
+    if _qdrant_client_instance is None:
+        _qdrant_client_instance = EvidenceQdrantClient()
+    return _qdrant_client_instance
+
+
 def main():
     parser = argparse.ArgumentParser(description="Query Qdrant vector store with version filtering.")
     parser.add_argument("--query", type=str, required=True, help="Search query string")
@@ -83,7 +93,7 @@ def main():
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
-    client = EvidenceQdrantClient()
+    client = get_evidence_qdrant_client()
 
     print(f"\nSearching for: '{args.query}' (version filter: {args.version or 'None'})...\n")
     results = client.search(query=args.query, version=args.version, limit=args.limit)

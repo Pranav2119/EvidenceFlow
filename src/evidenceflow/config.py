@@ -33,6 +33,10 @@ class Settings(BaseSettings):
         default="gemini-3.5-flash-lite",
         description="Default Gemini model family for agent nodes",
     )
+    GEMINI_EMBEDDING_MODEL: str = Field(
+        default="text-embedding-004",
+        description="Gemini embedding model name (D2-2: configurable to avoid silent breakage on deprecation)",
+    )
 
     # --- PostgreSQL Settings (Checkpointer, Step Ledger & Audit Trail) ---
     POSTGRES_USER: str = Field(
@@ -114,6 +118,10 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = Field(
         default="INFO",
         description="Logging verbosity level",
+    )
+    RETRIEVAL_LIMIT: int = Field(
+        default=5,
+        description="Max passages returned per retrieval query (D3-14: config-driven, not hardcoded in node)",
     )
 
     # [Fix 1.2] Fail-fast helper for LLM-dependent code paths
