@@ -8,6 +8,7 @@ import pytest
 from evidenceflow.guardrails.input_guardrail import evaluate_input_guardrails, input_guardrail_node
 from evidenceflow.graph.nodes.retriever import retriever_node
 from evidenceflow.graph.nodes.verifier import verifier_node, verify_statement_value_presence
+from evidenceflow.graph.nodes.answer_writer import deterministic_fallback_answer
 from evidenceflow.graph.nodes.abstention import format_abstention_response
 from evidenceflow.state import EvidenceFlowState, Citation
 
@@ -449,3 +450,67 @@ def test_verifier_line_breaks_normalization():
     assert res["is_abstained"] is False
 
 
+
+
+# --- 7. FIX 4: Offline Fallback Fail-Closed Behavior Tests ---
+
+def test_fallback_answers_when_named_setting_in_chunk():
+    """
+    FIX 4: Fallback answers when the question explicitly names a setting present in retrieved chunks.
+    """
+    passage = {
+        "chunk_id": "pg16-runtime-config-resource-vacuum-cost-limit",
+        "section": "Resource Consumption",
+        "title": "vacuum_cost_limit",
+        "content": "Parameter: vacuum_cost_limit ( integer )\nThe default value is 200.",
+    }
+    query = "What is the default value of vacuum_cost_limit in PostgreSQL 16?"
+    answer = deterministic_fallback_answer(query, "16", [passage])
+    assert "[^pg16-runtime-config-resource-vacuum-cost-limit]" in answer
+    assert "insufficient evidence" not in answer.lower()
+
+
+def test_fallback_abstains_when_query_does_not_name_setting():
+    """
+    FIX 4: Fallback abstains (fails closed) when the question does not name any setting.
+    """
+    passage = {
+        "chunk_id": "pg16-runtime-config-resource-work-mem",
+        "section": "Resource Consumption",
+        "title": "work_mem",
+        "content": "Parameter: work_mem ( integer )\nThe default value is 4MB.",
+    }
+    query = "How do I optimize system memory for high throughput in PostgreSQL 16?"
+    answer = deterministic_fallback_answer(query, "16", [passage])
+    assert "insufficient evidence" in answer.lower()
+
+
+def test_fallback_abstains_when_named_setting_not_in_retrieved_chunks():
+    """
+    FIX 4: Fallback abstains when the named setting in the question is absent from retrieved chunks.
+    """
+    passage = {
+        "chunk_id": "pg16-runtime-config-wal-wal-level",
+        "section": "Write Ahead Log",
+        "title": "wal_level",
+        "content": "Parameter: wal_level ( enum )\nThe default is replica.",
+    }
+    query = "What is the default value of quantum_wal_level in Postgres 16?"
+    answer = deterministic_fallback_answer(query, "16", [passage])
+    assert "insufficient evidence" in answer.lower()
+
+
+def test_fallback_answers_for_single_word_setting():
+    """
+    FIX 4: Fallback correctly recognizes single-word indexed settings like 'fsync'.
+    """
+    passage = {
+        "chunk_id": "pg16-runtime-config-wal-fsync",
+        "section": "Write Ahead Log",
+        "title": "fsync",
+        "content": "Parameter: fsync ( boolean )\nThe default is on.",
+    }
+    query = "What is the default of fsync in Postgres 16?"
+    answer = deterministic_fallback_answer(query, "16", [passage])
+    assert "[^pg16-runtime-config-wal-fsync]" in answer
+    assert "insufficient evidence" not in answer.lower()
