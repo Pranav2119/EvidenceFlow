@@ -15,7 +15,7 @@
 
 ### Tier 1: Measure First (Baseline Pipeline & Corpus Ingestion)
 - [x] Day 0: Tooling installs (pinned uv/Python, Docker Compose, Git init, .env validation)
-- [ ] Day 1: Versioned PostgreSQL Documentation parser & chunker with SHA-256 hashes
+- [x] Day 1: Versioned PostgreSQL Documentation parser & chunker with SHA-256 hashes
 - [ ] Day 2: Qdrant vector store setup with dense + BM25 hybrid search & version payload filters
 - [ ] Day 3: Baseline LangGraph state machine (`Planner` -> `Retriever` -> `AnswerWriter` -> `L1Verifier`)
 - [ ] Day 4: Standardized Abstention mechanism & input/output guardrails v1

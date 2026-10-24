@@ -1,9 +1,15 @@
 """
 config.py: Application configuration validated using Pydantic Settings.
 Loads environment variables from .env with strict type validation.
+
+Review fixes applied (2026-10-24):
+  [1.1] DATABASE_URL computed from individual parts via @computed_field
+  [1.2] require_gemini_key() helper for fail-fast API key validation
+  [1.3] Lazy singleton via get_settings() instead of module-level instantiation
 """
 
-from pydantic import Field
+from functools import lru_cache
+from pydantic import Field, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -49,10 +55,16 @@ class Settings(BaseSettings):
         default=5432,
         description="PostgreSQL port",
     )
-    DATABASE_URL: str = Field(
-        default="postgresql+psycopg://evidenceflow:evidenceflow_dev_secret@localhost:5432/evidenceflow_db",
-        description="SQLAlchemy async/sync connection string",
-    )
+
+    # [Fix 1.1] DATABASE_URL is now computed from individual parts, never drifts
+    @computed_field
+    @property
+    def DATABASE_URL(self) -> str:
+        """SQLAlchemy connection string computed from individual Postgres fields."""
+        return (
+            f"postgresql+psycopg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
+            f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+        )
 
     # --- Qdrant Vector Store Settings (Dense + Sparse Hybrid) ---
     QDRANT_HOST: str = Field(
@@ -96,6 +108,23 @@ class Settings(BaseSettings):
         description="Logging verbosity level",
     )
 
+    # [Fix 1.2] Fail-fast helper for LLM-dependent code paths
+    def require_gemini_key(self) -> str:
+        """Validates and returns the Gemini API key, raising immediately if not set."""
+        if not self.GEMINI_API_KEY:
+            raise ValueError(
+                "GEMINI_API_KEY is required but not set. "
+                "Add it to your .env file: GEMINI_API_KEY=your_key_here"
+            )
+        return self.GEMINI_API_KEY
 
-# Central singleton instance used across all modules
-settings = Settings()
+
+# [Fix 1.3] Lazy singleton — .env file I/O only happens on first call, not at import time
+@lru_cache
+def get_settings() -> Settings:
+    """Returns a cached Settings instance. Call this instead of importing a global."""
+    return Settings()
+
+
+# Backward-compatibility alias
+settings: Settings = get_settings()

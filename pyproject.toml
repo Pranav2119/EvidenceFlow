@@ -1,13 +1,14 @@
 [project]
 name = "evidenceflow"
 version = "0.1.0"
-description = "Add your description here"
+description = "Inspectable research-assistance platform with versioned RAG, graph memory, and evidence verification"
 readme = "README.md"
 authors = [
     { name = "Pranav", email = "pranavsakhalkar2119@gmail.com" }
 ]
 requires-python = ">=3.13"
 dependencies = [
+    "beautifulsoup4>=4.15.0",
     "google-genai>=2.33.0",
     "pydantic-settings>=2.16.1",
     "python-dotenv>=1.2.4",

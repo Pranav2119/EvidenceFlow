@@ -25,6 +25,7 @@ postgres_data/
 qdrant_data/
 neo4j_data/
 data/local/
+data/raw/
 
 # IDE & OS-specific files
 .idea/
