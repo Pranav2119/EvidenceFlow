@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Set
 from evidenceflow.config import get_settings
 from evidenceflow.state import EvidenceFlowState
 from evidenceflow.storage.qdrant_client import get_evidence_qdrant_client
+from evidenceflow.storage.bm25 import get_bm25_index
 
 COMMON_QUERY_STOPWORDS = {
     "what", "when", "where", "which", "who", "whom", "whose", "why", "how",
@@ -117,16 +118,25 @@ def retriever_node(state: EvidenceFlowState, limit: Optional[int] = None) -> Dic
     existing_audit = list(state.audit_trail)
 
     client = get_evidence_qdrant_client()
+    bm25_idx = get_bm25_index()
 
-    # Collect result lists for each subquery
+    # Collect result lists for each subquery: dense vector + BM25 lexical
     query_results: List[List[Dict[str, Any]]] = []
     all_raw_passages: List[Dict[str, Any]] = []
+    dense_passages: List[Dict[str, Any]] = []
 
     for subquery in plan:
-        results = client.search(query=subquery, version=target_version, limit=retrieval_limit)
-        if results:
-            query_results.append(results)
-            all_raw_passages.extend(results)
+        dense_results = client.search(query=subquery, version=target_version, limit=retrieval_limit)
+        bm25_results = bm25_idx.search(query=subquery, version=target_version, limit=retrieval_limit)
+
+        if dense_results:
+            query_results.append(dense_results)
+            all_raw_passages.extend(dense_results)
+            dense_passages.extend(dense_results)
+
+        if bm25_results:
+            query_results.append(bm25_results)
+            all_raw_passages.extend(bm25_results)
 
     # Guardrail Check 1: Empty retrieval results
     if not all_raw_passages:
@@ -146,7 +156,7 @@ def retriever_node(state: EvidenceFlowState, limit: Optional[int] = None) -> Dic
         }
 
     # Guardrail Check 2: Raw vector similarity threshold (dense cosine score, NOT RRF)
-    max_dense_score = max(p.get("score", 0.0) for p in all_raw_passages)
+    max_dense_score = max((p.get("score", 0.0) for p in dense_passages), default=0.0)
     if max_dense_score < threshold:
         fail_reason = (
             f"Retrieval Guardrail: Highest document similarity score ({max_dense_score:.4f}) is below "
@@ -213,9 +223,20 @@ def retriever_node(state: EvidenceFlowState, limit: Optional[int] = None) -> Dic
                     "audit_trail": existing_audit + [audit_entry],
                 }
 
+        # Check for did-you-mean suggestions using difflib against indexed setting names
+        suggestions = []
+        for term in unmatched_terms:
+            sugg = bm25_idx.suggest_setting_name(term)
+            if sugg:
+                suggestions.append(sugg)
+
+        suggestion_hint = ""
+        if suggestions:
+            suggestion_hint = f" Did you mean '{suggestions[0]}'?"
+
         fail_reason = (
             f"Retrieval Guardrail: Query terms {sorted(unmatched_terms)} do not exist in PostgreSQL {target_version} "
-            f"documentation (possible non-existent feature or unanswerable query)."
+            f"documentation (possible non-existent feature or unanswerable query).{suggestion_hint}"
         )
         audit_entry = {
             "node": "retriever",
