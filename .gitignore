@@ -1,0 +1,35 @@
+# Virtual Environment & Python bytecode
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Distribution / Packaging
+build/
+dist/
+*.egg-info/
+
+# Secrets & Environment variables (NEVER COMMIT REAL KEYS)
+.env
+.env.*
+!.env.example
+
+# Local Database & Container Volumes
+postgres_data/
+qdrant_data/
+neo4j_data/
+data/local/
+
+# IDE & OS-specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
