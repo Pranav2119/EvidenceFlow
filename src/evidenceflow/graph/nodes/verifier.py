@@ -165,13 +165,54 @@ def split_answer_into_citation_statements(draft_answer: str) -> List[Tuple[str, 
 
 
 
+NUMBER_WORDS = {
+    "zero": "0", "one": "1", "two": "2", "three": "3", "four": "4",
+    "five": "5", "six": "6", "seven": "7", "eight": "8", "nine": "9", "ten": "10",
+}
+
+UNIT_MAP = {
+    "second": "s", "seconds": "s",
+    "minute": "min", "minutes": "min",
+    "hour": "h", "hours": "h",
+    "day": "d", "days": "d",
+    "megabyte": "mb", "megabytes": "mb", "mb": "mb",
+    "gigabyte": "gb", "gigabytes": "gb", "gb": "gb",
+    "kilobyte": "kb", "kilobytes": "kb", "kb": "kb",
+}
+
+
+def normalize_text(text: str) -> str:
+    """
+    Normalizes documentation text and claims:
+      1. Collapses whitespace and line breaks.
+      2. Maps number words + unit names (e.g. 'one second' -> '1s', 'five minutes' -> '5min').
+      3. Collapses spaces in units (e.g. '80 mb' -> '80mb', '1 gb' -> '1gb').
+      4. Strips parenthesis boundaries around tokens (e.g. '( 1s )' -> '1s').
+    """
+    t = re.sub(r"\s+", " ", text.lower()).strip()
+
+    def replace_num_word_unit(m):
+        num = NUMBER_WORDS.get(m.group(1), m.group(1))
+        unit = UNIT_MAP.get(m.group(2), m.group(2))
+        return f"{num}{unit}"
+
+    num_pattern = "|".join(NUMBER_WORDS.keys())
+    unit_pattern = "|".join(UNIT_MAP.keys())
+    t = re.sub(rf"\b({num_pattern})\s+({unit_pattern})\b", replace_num_word_unit, t)
+    t = re.sub(r"\b(\d+(?:\.\d+)?)\s*([a-z]+)\b", lambda m: f"{m.group(1)}{UNIT_MAP.get(m.group(2), m.group(2))}", t)
+    t = re.sub(r"\(\s*([a-z0-9]+)\s*\)", r" \1 ", t)
+    return re.sub(r"\s+", " ", t).strip()
+
+
 def verify_statement_value_presence(
     statement: str,
     passage_content: str,
 ) -> Tuple[List[str], Optional[str]]:
     """
     Verifies that specific quantities, units, and enum states mentioned in the statement
-    exist in the cited passage text, and respect setting proximity boundaries.
+    exist in the cited passage text within the same sentence as the claimed attribute
+    (default / minimum / maximum / range).
+    Respects setting boundaries in multi-setting chunks without fragile character distance.
 
     Returns:
         (missing_values, detail_error_message)
@@ -180,44 +221,107 @@ def verify_statement_value_presence(
     if not claimed_values:
         return [], None
 
-    content_lower = passage_content.lower()
-
     # Extract any snake_case parameter names present in the statement
     stmt_params = re.findall(r"\b[a-z][a-z0-9]*_[a-z0-9_]+\b", statement.lower())
 
-    # Build proximity text windows if parameter is present in passage
-    proximity_windows = []
-    if stmt_params:
-        for p in stmt_params:
-            if p in content_lower:
-                for match in re.finditer(re.escape(p), content_lower):
-                    start = max(0, match.start() - 60)
-                    end = min(len(content_lower), match.end() + 280)
-                    proximity_windows.append(content_lower[start:end])
+    # Determine attribute from statement (ignoring setting names with underscores)
+    stmt_clean = re.sub(r"\b[a-z][a-z0-9]*_[a-z0-9_]+\b", "", statement.lower())
+    attr = None
+    if re.search(r"\bdefaults?\b", stmt_clean):
+        attr = "default"
+    elif re.search(r"\bmaximum\b|\bmax\b|\bupper\b", stmt_clean):
+        attr = "maximum"
+    elif re.search(r"\bminimum\b|\bmin\b|\blower\b", stmt_clean):
+        attr = "minimum"
+    elif re.search(r"\brange\b|\bbetween\b", stmt_clean):
+        attr = "range"
+
+    # Find all setting parameter positions in the chunk
+    chunk_params = []
+    for m in re.finditer(r"\b[a-z][a-z0-9]*_[a-z0-9_]+\b", passage_content.lower()):
+        chunk_params.append((m.start(), m.group(0)))
+
+    # Split into sentences preserving paragraph structure and single-line wraps
+    p_normalized_breaks = re.sub(r"(?<!\n)\n(?!\n)", " ", passage_content)
+    raw_sentences = []
+    sentence_positions = []
+    for m in re.finditer(r"[^.\n!?]+(?:\.|\n{2,}|!|\?|$)", p_normalized_breaks):
+        s = m.group(0).strip()
+        if s:
+            raw_sentences.append(s)
+            sentence_positions.append(m.start())
+
+    norm_sentences = [normalize_text(s) for s in raw_sentences]
 
     missing_values = []
     for val in claimed_values:
         equiv_candidates = get_equivalent_quantities(val)
+        norm_candidates = {normalize_text(c) for c in equiv_candidates}
 
-        # If parameter proximity windows exist, check that the value is in the proximity window
-        if proximity_windows:
-            in_proximity = any(
-                cand in window
-                for cand in equiv_candidates
-                for window in proximity_windows
+        # Find sentences containing the claimed value (or any equivalent variant)
+        matching_sentences = []
+        for raw_s, norm_s, pos in zip(raw_sentences, norm_sentences, sentence_positions):
+            has_val = any(
+                re.search(r"\b" + re.escape(c) + r"\b", norm_s) or c in norm_s
+                for c in norm_candidates
             )
-            if not in_proximity:
-                # Value is either completely missing or attached to a different setting elsewhere in chunk
-                in_passage_elsewhere = any(cand in content_lower for cand in equiv_candidates)
-                if in_passage_elsewhere:
-                    return [val], f"Value '{val}' appears elsewhere in chunk, but does not belong to setting '{stmt_params[0]}'."
-                else:
-                    missing_values.append(val)
+            if has_val:
+                # Find active parameter heading for this sentence
+                active_p = None
+                if chunk_params:
+                    preceding = [p for p_pos, p in chunk_params if p_pos <= pos + 50]
+                    if preceding:
+                        active_p = preceding[-1]
+                matching_sentences.append((raw_s, norm_s, active_p))
+
+        if not matching_sentences:
+            missing_values.append(val)
+            continue
+
+        # Check primary setting of the chunk if declared
+        primary_m = re.search(r"Parameter:\s*([a-z0-9_]+)", passage_content, re.IGNORECASE)
+        primary_chunk_setting = primary_m.group(1).lower() if primary_m else None
+
+        if primary_chunk_setting and primary_chunk_setting in stmt_params:
+            target_p = primary_chunk_setting
+        elif stmt_params:
+            target_p = stmt_params[0]
         else:
-            # Fall back to whole passage check
-            in_passage = any(cand in content_lower for cand in equiv_candidates)
-            if not in_passage:
-                missing_values.append(val)
+            target_p = None
+
+        # In multi-setting chunks: ensure value belongs to the claimed setting
+        if target_p and chunk_params and len(set(p for _, p in chunk_params)) > 1:
+            setting_matched = any(
+                active_p == target_p or (primary_chunk_setting and active_p == primary_chunk_setting)
+                for _, _, active_p in matching_sentences
+                if active_p
+            )
+            if not setting_matched:
+                active_p_found = matching_sentences[0][2] or "another setting"
+                return (
+                    [val],
+                    f"Value '{val}' appears in passage, but belongs to setting '{active_p_found}', not '{target_p}'.",
+                )
+
+        # If statement asserted an attribute (e.g. default / max / min / range),
+        # verify that at least one sentence containing the value contains that attribute
+        if attr:
+            attr_patterns = {
+                "default": [r"\bdefaults?\b"],
+                "maximum": [r"\bmaximum\b", r"\bmax\b", r"\bupper\s+limit\b"],
+                "minimum": [r"\bminimum\b", r"\bmin\b", r"\blower\s+limit\b"],
+                "range": [r"\brange\b", r"\bbetween\b", r"\bto\b"],
+            }
+            patterns = attr_patterns[attr]
+            attr_matched = any(
+                any(re.search(pat, norm_s) for pat in patterns)
+                for _, norm_s, _ in matching_sentences
+            )
+            if not attr_matched:
+                return (
+                    [val],
+                    f"Value '{val}' appears in passage, but does not match claimed attribute '{attr}'.",
+                )
 
     if missing_values:
         return missing_values, f"Values {missing_values} do not appear in cited passage."
@@ -338,63 +442,46 @@ def verifier_node(state: EvidenceFlowState) -> Dict[str, Any]:
                 }
         else:
             # Multi-chunk citation: e.g. [^chunk1, ^chunk2]
-            stmt_params = re.findall(r"\b[a-z][a-z0-9]*_[a-z0-9_]+\b", stmt_text.lower())
+            stmt_lower = stmt_text.lower()
+            targeted_cids = []
             for cid in clause_cids:
                 passage_content = passage_map.get(cid, "")
-                p_lower = passage_content.lower()
+                m = re.search(r"Parameter:\s*([a-z0-9_]+)", passage_content, re.IGNORECASE)
+                target_name = m.group(1).lower() if m else ""
+                if not target_name:
+                    parts = re.findall(r"[a-z0-9]+", cid.lower())
+                    target_name = parts[-1] if parts else ""
+                if target_name and target_name in stmt_lower:
+                    targeted_cids.append(cid)
 
-                # If statement names multiple settings, check the part relevant to this chunk
-                matching_params = [p for p in stmt_params if p in p_lower]
-                if matching_params and len(matching_params) < len(stmt_params):
-                    for p in matching_params:
-                        m = re.search(re.escape(p) + r"[^,;\.]*", stmt_text, re.IGNORECASE)
-                        sub_stmt = m.group(0) if m else stmt_text
-                        missing, err_detail = verify_statement_value_presence(sub_stmt, passage_content)
-                        if missing or err_detail:
-                            fail_reason = (
-                                f"L1.5/L2 Value Verification Failed: {err_detail or missing} in source passage '{cid}'."
-                            )
-                            audit_entry = {
-                                "node": "verifier",
-                                "action": "l2_failed_value_mismatch",
-                                "code": "VALUE_MISMATCH",
-                                "chunk_id": cid,
-                                "statement": sub_stmt,
-                                "missing_values": missing,
-                                "detail": err_detail,
-                                "l1_passed": False,
-                            }
-                            return {
-                                "l1_passed": False,
-                                "is_abstained": True,
-                                "abstention_code": "VALUE_MISMATCH",
-                                "abstention_reason": fail_reason,
-                                "audit_trail": existing_audit + [audit_entry],
-                            }
-                else:
-                    # Shared claim across all cited chunks (e.g. 'Both settings default to 500')
-                    missing, err_detail = verify_statement_value_presence(stmt_text, passage_content)
-                    if missing or err_detail:
-                        fail_reason = (
-                            f"L1.5/L2 Value Verification Failed: {err_detail or missing} in source passage '{cid}'."
-                        )
-                        audit_entry = {
-                            "node": "verifier",
-                            "action": "l2_failed_value_mismatch",
-                            "code": "VALUE_MISMATCH",
-                            "chunk_id": cid,
-                            "statement": stmt_text,
-                            "missing_values": missing,
-                            "detail": err_detail,
-                            "l1_passed": False,
-                        }
-                        return {
-                            "l1_passed": False,
-                            "is_abstained": True,
-                            "abstention_code": "VALUE_MISMATCH",
-                            "abstention_reason": fail_reason,
-                            "audit_trail": existing_audit + [audit_entry],
-                        }
+            # If specific chunks were targeted by name, verify those targeted chunks
+            # (e.g. fsync statement citing [fsync, wal_sync_method])
+            cids_to_verify = targeted_cids if targeted_cids else clause_cids
+
+            for cid in cids_to_verify:
+                passage_content = passage_map.get(cid, "")
+                missing, err_detail = verify_statement_value_presence(stmt_text, passage_content)
+                if missing or err_detail:
+                    fail_reason = (
+                        f"L1.5/L2 Value Verification Failed: {err_detail or missing} in source passage '{cid}'."
+                    )
+                    audit_entry = {
+                        "node": "verifier",
+                        "action": "l2_failed_value_mismatch",
+                        "code": "VALUE_MISMATCH",
+                        "chunk_id": cid,
+                        "statement": stmt_text,
+                        "missing_values": missing,
+                        "detail": err_detail,
+                        "l1_passed": False,
+                    }
+                    return {
+                        "l1_passed": False,
+                        "is_abstained": True,
+                        "abstention_code": "VALUE_MISMATCH",
+                        "abstention_reason": fail_reason,
+                        "audit_trail": existing_audit + [audit_entry],
+                    }
 
     # Mark Citations as verified
     updated_citations: List[Union[Citation, Dict[str, Any]]] = []

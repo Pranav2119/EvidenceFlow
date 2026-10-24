@@ -336,3 +336,116 @@ def test_verifier_one_statement_citing_two_chunks():
     assert res_invalid["is_abstained"] is True
     assert res_invalid["abstention_code"] == "VALUE_MISMATCH"
 
+
+# --- 12. Synthetic Tests for Sentence-Level Attribute Verification (FIX 2) ---
+
+def test_verifier_default_vs_maximum_attribute_mismatch():
+    """
+    FIX 2: Chunk has both a default and a maximum.
+    Claiming the maximum as the default must fail with VALUE_MISMATCH.
+    """
+    passage = {
+        "chunk_id": "chunk_max_conn",
+        "content": (
+            "Parameter: max_connections ( integer )\n"
+            "Sets the maximum number of concurrent connections.\n"
+            "The default is 100 connections.\n"
+            "The maximum allowed is 262143.\n"
+        ),
+    }
+
+    # Valid default claim: 100
+    valid_default = EvidenceFlowState(
+        query="What is max_connections default?",
+        retrieved_passages=[passage],
+        draft_answer="The default value of max_connections is 100 [^chunk_max_conn].",
+        citations=[Citation(chunk_id="chunk_max_conn", doc_name="doc", section="sec", quote="")],
+    )
+    res_val_def = verifier_node(valid_default)
+    assert res_val_def["l1_passed"] is True
+    assert res_val_def["is_abstained"] is False
+
+    # Hallucinated default: claiming 262143 is the default (which is actually the max)
+    invalid_default = EvidenceFlowState(
+        query="What is max_connections default?",
+        retrieved_passages=[passage],
+        draft_answer="The default value of max_connections is 262143 [^chunk_max_conn].",
+        citations=[Citation(chunk_id="chunk_max_conn", doc_name="doc", section="sec", quote="")],
+    )
+    res_inv_def = verifier_node(invalid_default)
+    assert res_inv_def["l1_passed"] is False
+    assert res_inv_def["is_abstained"] is True
+    assert res_inv_def["abstention_code"] == "VALUE_MISMATCH"
+
+    # Valid maximum claim: 262143
+    valid_max = EvidenceFlowState(
+        query="What is the maximum max_connections?",
+        retrieved_passages=[passage],
+        draft_answer="The maximum value of max_connections is 262143 [^chunk_max_conn].",
+        citations=[Citation(chunk_id="chunk_max_conn", doc_name="doc", section="sec", quote="")],
+    )
+    res_val_max = verifier_node(valid_max)
+    assert res_val_max["l1_passed"] is True
+    assert res_val_max["is_abstained"] is False
+
+
+def test_verifier_spaced_units_and_normalization():
+    """
+    FIX 2: Spaced units like '80 mb' vs '80MB' or '1 GB' vs '1GB' normalize and match.
+    """
+    passage = {
+        "chunk_id": "chunk_wal",
+        "content": "Parameter: min_wal_size ( integer )\nThe default is 80 MB.\n",
+    }
+
+    state = EvidenceFlowState(
+        query="What is min_wal_size default?",
+        retrieved_passages=[passage],
+        draft_answer="The default value of min_wal_size is 80MB [^chunk_wal].",
+        citations=[Citation(chunk_id="chunk_wal", doc_name="doc", section="sec", quote="")],
+    )
+    res = verifier_node(state)
+    assert res["l1_passed"] is True
+    assert res["is_abstained"] is False
+
+
+def test_verifier_number_words_mapping():
+    """
+    FIX 2: Number words like 'one second' map to '1s' and match '( 1s )'.
+    """
+    passage = {
+        "chunk_id": "chunk_deadlock",
+        "content": "Parameter: deadlock_timeout ( integer )\nThe default is one second ( 1s ), which is minimal.\n",
+    }
+
+    state = EvidenceFlowState(
+        query="What is deadlock_timeout default?",
+        retrieved_passages=[passage],
+        draft_answer="The default value of deadlock_timeout is 1s [^chunk_deadlock].",
+        citations=[Citation(chunk_id="chunk_deadlock", doc_name="doc", section="sec", quote="")],
+    )
+    res = verifier_node(state)
+    assert res["l1_passed"] is True
+    assert res["is_abstained"] is False
+
+
+def test_verifier_line_breaks_normalization():
+    """
+    FIX 2: Line breaks within values (e.g. 'one\\nminute') collapse and match '1min'.
+    """
+    passage = {
+        "chunk_id": "chunk_autovac",
+        "content": "Parameter: autovacuum_naptime ( integer )\nThe default is one\nminute ( 1min ).\n",
+    }
+
+    state = EvidenceFlowState(
+        query="What is autovacuum_naptime default?",
+        retrieved_passages=[passage],
+        draft_answer="The default of autovacuum_naptime is 1min [^chunk_autovac].",
+        citations=[Citation(chunk_id="chunk_autovac", doc_name="doc", section="sec", quote="")],
+    )
+    res = verifier_node(state)
+    assert res["l1_passed"] is True
+    assert res["is_abstained"] is False
+
+
