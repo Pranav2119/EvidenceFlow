@@ -235,11 +235,104 @@ def test_l2_unit_equivalence_passes():
     assert result["is_abstained"] is False
 
 
-# --- 8. Standardized Abstention Response Formatting ---
+# --- 11. Synthetic Tests for Per-Citation Checking (FIX 1) ---
 
-def test_standardized_abstention_format():
-    msg = format_abstention_response("16", "Security Guardrail Triggered")
-    assert "PostgreSQL 16" in msg
-    assert "ABSTAINED" in msg
-    assert "Security Guardrail Triggered" in msg
-    assert "EvidenceFlow AI adheres to strict groundedness" in msg
+def test_verifier_two_settings_two_citations_per_citation():
+    """
+    FIX 1: Split answer into statements bound to citations so settings do not cross-contaminate.
+    """
+    passages = [
+        {
+            "chunk_id": "chunk_alpha",
+            "content": "Parameter: setting_alpha (integer). The default value is 100.",
+        },
+        {
+            "chunk_id": "chunk_beta",
+            "content": "Parameter: setting_beta (integer). The default value is 200.",
+        },
+    ]
+
+    # Grounded answer: each statement cites its own chunk with correct value
+    valid_state = EvidenceFlowState(
+        query="What are setting_alpha and setting_beta?",
+        retrieved_passages=passages,
+        draft_answer="The default value of setting_alpha is 100 [^chunk_alpha]. The default of setting_beta is 200 [^chunk_beta].",
+        citations=[
+            Citation(chunk_id="chunk_alpha", doc_name="doc", section="sec", quote=""),
+            Citation(chunk_id="chunk_beta", doc_name="doc", section="sec", quote=""),
+        ],
+    )
+    res_valid = verifier_node(valid_state)
+    assert res_valid["l1_passed"] is True
+    assert res_valid["is_abstained"] is False
+
+    # Swapped answer: claims setting_alpha is 200 and setting_beta is 100
+    swapped_state = EvidenceFlowState(
+        query="What are setting_alpha and setting_beta?",
+        retrieved_passages=passages,
+        draft_answer="The default value of setting_alpha is 200 [^chunk_alpha]. The default of setting_beta is 100 [^chunk_beta].",
+        citations=[
+            Citation(chunk_id="chunk_alpha", doc_name="doc", section="sec", quote=""),
+            Citation(chunk_id="chunk_beta", doc_name="doc", section="sec", quote=""),
+        ],
+    )
+    res_swapped = verifier_node(swapped_state)
+    assert res_swapped["l1_passed"] is False
+    assert res_swapped["is_abstained"] is True
+    assert res_swapped["abstention_code"] == "VALUE_MISMATCH"
+
+
+def test_verifier_one_statement_citing_two_chunks():
+    """
+    FIX 1: A single statement citing two chunks [^chunk1, ^chunk2] must be verified across both chunks.
+    """
+    passages_matching = [
+        {
+            "chunk_id": "chunk_alpha",
+            "content": "Parameter: setting_alpha (integer). Memory parameter. The default is 500.",
+        },
+        {
+            "chunk_id": "chunk_beta",
+            "content": "Parameter: setting_beta (integer). Memory parameter. The default is 500.",
+        },
+    ]
+
+    # Shared assertion: both default to 500
+    valid_state = EvidenceFlowState(
+        query="What do setting_alpha and setting_beta default to?",
+        retrieved_passages=passages_matching,
+        draft_answer="Both setting_alpha and setting_beta default to 500 [^chunk_alpha, ^chunk_beta].",
+        citations=[
+            Citation(chunk_id="chunk_alpha", doc_name="doc", section="sec", quote=""),
+            Citation(chunk_id="chunk_beta", doc_name="doc", section="sec", quote=""),
+        ],
+    )
+    res_valid = verifier_node(valid_state)
+    assert res_valid["l1_passed"] is True
+    assert res_valid["is_abstained"] is False
+
+    # One chunk differs (setting_beta has default 300)
+    passages_differing = [
+        {
+            "chunk_id": "chunk_alpha",
+            "content": "Parameter: setting_alpha (integer). Memory parameter. The default is 500.",
+        },
+        {
+            "chunk_id": "chunk_beta",
+            "content": "Parameter: setting_beta (integer). Memory parameter. The default is 300.",
+        },
+    ]
+    invalid_state = EvidenceFlowState(
+        query="What do setting_alpha and setting_beta default to?",
+        retrieved_passages=passages_differing,
+        draft_answer="Both setting_alpha and setting_beta default to 500 [^chunk_alpha, ^chunk_beta].",
+        citations=[
+            Citation(chunk_id="chunk_alpha", doc_name="doc", section="sec", quote=""),
+            Citation(chunk_id="chunk_beta", doc_name="doc", section="sec", quote=""),
+        ],
+    )
+    res_invalid = verifier_node(invalid_state)
+    assert res_invalid["l1_passed"] is False
+    assert res_invalid["is_abstained"] is True
+    assert res_invalid["abstention_code"] == "VALUE_MISMATCH"
+

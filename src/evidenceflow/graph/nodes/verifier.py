@@ -116,6 +116,55 @@ def extract_claimed_values(statement: str) -> List[str]:
     return list(dict.fromkeys(filtered))
 
 
+def split_answer_into_citation_statements(draft_answer: str) -> List[Tuple[str, List[str]]]:
+    """
+    Splits a draft response into individual factual statements, each bound to its cited chunk IDs.
+    Handles:
+      - Multiple sentences, each with its own [^citation]
+      - Bullet points with citations
+      - Multi-citation blocks like [^chunk1, ^chunk2]
+      - Consecutive citation blocks like [^chunk1] [^chunk2]
+    Returns:
+      List of (statement_text, [cited_chunk_ids])
+    """
+    citation_pattern = re.compile(r"\[\^([^\]]+)\]")
+    matches = list(citation_pattern.finditer(draft_answer))
+    if not matches:
+        return []
+
+    # Group adjacent citations together if separated only by whitespace or punctuation
+    grouped = []
+    i = 0
+    while i < len(matches):
+        m = matches[i]
+        cids = [c.strip().lstrip("^") for c in re.split(r"[,;\s]+", m.group(1)) if c.strip().lstrip("^")]
+        start_idx = m.start()
+        end_idx = m.end()
+        j = i + 1
+        while j < len(matches):
+            between = draft_answer[end_idx:matches[j].start()]
+            if not between.strip() or re.fullmatch(r"[,;\s]*", between):
+                cids.extend([c.strip().lstrip("^") for c in re.split(r"[,;\s]+", matches[j].group(1)) if c.strip().lstrip("^")])
+                end_idx = matches[j].end()
+                j += 1
+            else:
+                break
+        grouped.append((start_idx, end_idx, list(dict.fromkeys(cids))))
+        i = j
+
+    results = []
+    last_end = 0
+    for start_idx, end_idx, cids in grouped:
+        raw_stmt = draft_answer[last_end:start_idx].strip()
+        # Clean leading bullet markers, newlines, or sentence-separating punctuation
+        raw_stmt = re.sub(r"^[.\n\r\t\-*#;,\s]+", "", raw_stmt).strip()
+        results.append((raw_stmt, cids))
+        last_end = end_idx
+
+    return results
+
+
+
 def verify_statement_value_presence(
     statement: str,
     passage_content: str,
@@ -256,19 +305,16 @@ def verifier_node(state: EvidenceFlowState) -> Dict[str, Any]:
             "audit_trail": existing_audit + [audit_entry],
         }
 
-    # Failure Mode 3 (L1.5 & L2): Value & Proximity Presence Verification
-    clauses = re.findall(r"([^.\n;]+?\[\^[^\]]+\])", draft_answer)
-    for clause_text in clauses:
-        clause_blocks = re.findall(r"\[\^([^\]]+)\]", clause_text)
-        clause_cids = [
-            cid.strip().lstrip("^")
-            for b in clause_blocks
-            for cid in re.split(r"[,;\s]+", b)
-            if cid.strip().lstrip("^")
-        ]
-        for cid in clause_cids:
+    # Failure Mode 3 (L1.5 & L2): Per-Citation Value & Proximity Presence Verification
+    statements = split_answer_into_citation_statements(draft_answer)
+    for stmt_text, clause_cids in statements:
+        if not stmt_text:
+            continue
+
+        if len(clause_cids) == 1:
+            cid = clause_cids[0]
             passage_content = passage_map.get(cid, "")
-            missing, err_detail = verify_statement_value_presence(clause_text, passage_content)
+            missing, err_detail = verify_statement_value_presence(stmt_text, passage_content)
             if missing or err_detail:
                 fail_reason = (
                     f"L1.5/L2 Value Verification Failed: {err_detail or missing} in source passage '{cid}'."
@@ -278,6 +324,7 @@ def verifier_node(state: EvidenceFlowState) -> Dict[str, Any]:
                     "action": "l2_failed_value_mismatch",
                     "code": "VALUE_MISMATCH",
                     "chunk_id": cid,
+                    "statement": stmt_text,
                     "missing_values": missing,
                     "detail": err_detail,
                     "l1_passed": False,
@@ -289,6 +336,65 @@ def verifier_node(state: EvidenceFlowState) -> Dict[str, Any]:
                     "abstention_reason": fail_reason,
                     "audit_trail": existing_audit + [audit_entry],
                 }
+        else:
+            # Multi-chunk citation: e.g. [^chunk1, ^chunk2]
+            stmt_params = re.findall(r"\b[a-z][a-z0-9]*_[a-z0-9_]+\b", stmt_text.lower())
+            for cid in clause_cids:
+                passage_content = passage_map.get(cid, "")
+                p_lower = passage_content.lower()
+
+                # If statement names multiple settings, check the part relevant to this chunk
+                matching_params = [p for p in stmt_params if p in p_lower]
+                if matching_params and len(matching_params) < len(stmt_params):
+                    for p in matching_params:
+                        m = re.search(re.escape(p) + r"[^,;\.]*", stmt_text, re.IGNORECASE)
+                        sub_stmt = m.group(0) if m else stmt_text
+                        missing, err_detail = verify_statement_value_presence(sub_stmt, passage_content)
+                        if missing or err_detail:
+                            fail_reason = (
+                                f"L1.5/L2 Value Verification Failed: {err_detail or missing} in source passage '{cid}'."
+                            )
+                            audit_entry = {
+                                "node": "verifier",
+                                "action": "l2_failed_value_mismatch",
+                                "code": "VALUE_MISMATCH",
+                                "chunk_id": cid,
+                                "statement": sub_stmt,
+                                "missing_values": missing,
+                                "detail": err_detail,
+                                "l1_passed": False,
+                            }
+                            return {
+                                "l1_passed": False,
+                                "is_abstained": True,
+                                "abstention_code": "VALUE_MISMATCH",
+                                "abstention_reason": fail_reason,
+                                "audit_trail": existing_audit + [audit_entry],
+                            }
+                else:
+                    # Shared claim across all cited chunks (e.g. 'Both settings default to 500')
+                    missing, err_detail = verify_statement_value_presence(stmt_text, passage_content)
+                    if missing or err_detail:
+                        fail_reason = (
+                            f"L1.5/L2 Value Verification Failed: {err_detail or missing} in source passage '{cid}'."
+                        )
+                        audit_entry = {
+                            "node": "verifier",
+                            "action": "l2_failed_value_mismatch",
+                            "code": "VALUE_MISMATCH",
+                            "chunk_id": cid,
+                            "statement": stmt_text,
+                            "missing_values": missing,
+                            "detail": err_detail,
+                            "l1_passed": False,
+                        }
+                        return {
+                            "l1_passed": False,
+                            "is_abstained": True,
+                            "abstention_code": "VALUE_MISMATCH",
+                            "abstention_reason": fail_reason,
+                            "audit_trail": existing_audit + [audit_entry],
+                        }
 
     # Mark Citations as verified
     updated_citations: List[Union[Citation, Dict[str, Any]]] = []
