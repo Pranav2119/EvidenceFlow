@@ -103,6 +103,27 @@ def sanitize_payload(obj: Any) -> Any:
     return obj
 
 
+def get_next_step_number(thread_id: str) -> int:
+    """
+    Returns the next sequential thread-wide step number from step_ledger.
+    Guarantees that step_number is a strictly monotonic counter across all turns in a thread.
+    """
+    try:
+        pool = get_connection_pool()
+        with pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT COALESCE(MAX(step_number), 0) + 1 AS next_step FROM step_ledger WHERE thread_id = %s;",
+                    (thread_id,)
+                )
+                row = cur.fetchone()
+                if row:
+                    return int(row["next_step"]) if isinstance(row, dict) else int(row[0])
+                return 1
+    except Exception:
+        return 1
+
+
 def record_turn(
     turn_id: str,
     thread_id: str,

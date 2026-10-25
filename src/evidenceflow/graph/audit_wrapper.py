@@ -9,7 +9,7 @@ import time
 import uuid
 from typing import Any, Callable, Dict, List, Optional
 from evidenceflow.state import EvidenceFlowState
-from evidenceflow.storage.ledger import record_step, record_claim
+from evidenceflow.storage.ledger import record_step, record_claim, get_next_step_number
 from evidenceflow.graph.nodes.verifier import extract_claimed_values, split_answer_into_citation_statements
 
 logger = logging.getLogger(__name__)
@@ -32,7 +32,10 @@ def audit_node_wrapper(
         if not turn_id:
             turn_id = str(uuid.uuid4())
 
-        step_number = len(getattr(state, "audit_trail", [])) + 1
+        # Resolve strictly monotonic thread-wide step number
+        state_steps = len(getattr(state, "audit_trail", [])) + 1
+        db_steps = get_next_step_number(thread_id)
+        step_number = max(state_steps, db_steps)
 
         # Execute the underlying node function
         try:

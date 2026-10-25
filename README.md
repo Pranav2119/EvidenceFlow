@@ -142,8 +142,8 @@ uv run python -m evidenceflow.eval.run_guardrail_exam --delay 1.5
 ## Auditability & Append-Only Invariants
 
 Every conversation turn, node step, and verified claim is stored in PostgreSQL:
-- `turns`: Stores final user queries, draft answers, and abstention codes.
-- `step_ledger`: Stores node name, action, status, decided_by (`rule`, `llm`, `fallback`), execution latency in milliseconds, token counts, and sanitized details.
+- `turns`: Stores final user queries, draft answers, turn numbers, and abstention codes.
+- `step_ledger`: Stores node transitions, actions, status, decided_by (`rule`, `llm`, `fallback`), execution latency in milliseconds, token counts, and sanitized details. **`step_number` is a thread-wide sequential counter** that monotonically increments across all turns within a conversation thread (e.g. Turn 1: steps 1–5, Turn 2: steps 6–10).
 - `claim_audit`: Stores the exact statement, cited chunk ID, chunk cryptographic SHA-256 hash, documented version, claimed values, and verifier code.
 
 **Database-Level Immutability & Defense-in-Depth**:

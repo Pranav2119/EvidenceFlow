@@ -28,7 +28,7 @@ from evidenceflow.storage.ledger import (
     fetch_steps,
     fetch_claims,
 )
-from evidenceflow.storage.migrate_postgres import run_migrations
+from evidenceflow.storage.migrate_postgres import run_migrations, drop_all_tables
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -445,3 +445,84 @@ def test_sanitize_payload_preserves_token_counts():
     assert clean["bearer_token"] == "[REDACTED]"
     assert clean["access_token"] == "[REDACTED]"
     assert clean["nested_metrics"]["secret_token"] == "[REDACTED]"
+
+
+# --- 7. Test Fresh Database Setup (Owner DDL) & Limited Role Lifecycle ---
+
+def test_fresh_database_setup_and_limited_role_lifecycle():
+    """
+    Day 5 Review Item 4: Confirm checkpointer.setup() runs only in the owner-role migration step,
+    not at app startup, and verify a fresh database can be set up and then used by the limited role.
+    """
+    # 1. Reset all tables using owner role
+    close_connection_pool()
+    drop_all_tables()
+
+    # 2. Re-run migrations under owner role (runs checkpointer.setup() and migrations 001, 002, 003)
+    applied = run_migrations()
+    assert "langgraph_checkpointer_setup" in applied
+    assert "003_app_role.sql" in applied
+
+    # 3. Confirm limited app role cannot perform DDL (table creation fails with InsufficientPrivilege)
+    conn_str_app = get_postgres_connection_string(use_app_role=True)
+    with psycopg.connect(conn_str_app, autocommit=True) as conn_app:
+        with pytest.raises(InsufficientPrivilege):
+            with conn_app.cursor() as cur:
+                cur.execute("CREATE TABLE malicious_table (id INT);")
+
+    # 4. App runtime operates normally using limited app role
+    thread_lifecycle = f"lifecycle-thread-{uuid.uuid4().hex[:6]}"
+    state = run_pipeline(
+        query="What is the default value of autovacuum_work_mem in PostgreSQL 16?",
+        version="16",
+        thread_id=thread_lifecycle,
+        use_postgres_checkpointer=True,
+    )
+    assert not state.is_abstained
+
+    # 5. Verify records persisted under limited role
+    turns = fetch_turns(thread_lifecycle)
+    assert len(turns) == 1
+    assert "autovacuum_work_mem" in turns[0]["query"]
+
+    steps = fetch_steps(thread_lifecycle)
+    assert len(steps) >= 4
+    for s in steps:
+        assert s["status"] in ("success", "abstained")
+        assert s["decided_by"] in ("rule", "llm", "fallback")
+
+
+# --- 8. Test Step Number Monotonic Thread-Wide Increment ---
+
+def test_step_number_is_thread_wide_counter():
+    """
+    Day 5 Review Item 2: Verify step_number increments monotonically across multiple turns in a thread.
+    """
+    thread_id = f"thread-step-counter-{uuid.uuid4().hex[:6]}"
+
+    # Turn 1
+    run_pipeline(
+        query="What is the default of work_mem in PostgreSQL 16?",
+        version="16",
+        thread_id=thread_id,
+        turn_number=1,
+        use_postgres_checkpointer=True,
+    )
+    steps_t1 = fetch_steps(thread_id)
+    assert len(steps_t1) >= 4
+    t1_step_numbers = [s["step_number"] for s in steps_t1]
+    assert t1_step_numbers == list(range(1, len(steps_t1) + 1))
+
+    # Turn 2 on same thread
+    run_pipeline(
+        query="What is the default of shared_buffers in PostgreSQL 16?",
+        version="16",
+        thread_id=thread_id,
+        turn_number=2,
+        use_postgres_checkpointer=True,
+    )
+    steps_all = fetch_steps(thread_id)
+    assert len(steps_all) > len(steps_t1)
+    all_step_numbers = [s["step_number"] for s in steps_all]
+    # Verify strict monotonic sequence 1, 2, 3, ... N with no gaps or resets
+    assert all_step_numbers == list(range(1, len(steps_all) + 1))
