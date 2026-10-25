@@ -270,3 +270,40 @@ def test_input_validation_guards():
     res_high_lim = search_passages(query="work_mem", version="16", limit=100)
     assert res_high_lim["status"] == "success"
     assert res_high_lim["count"] <= 20
+
+
+# --- 8. Stdio Subprocess Smoke Test ---
+
+@pytest.mark.anyio
+async def test_stdio_subprocess_smoke_client_session():
+    """
+    Day 6 Smoke Test: Boots evidenceflow.mcp.corpus_server as a real external OS subprocess,
+    connects over standard I/O via stdio_client, lists registered tools, and calls list_versions.
+    Ensures zero stdout corruption and clean JSON-RPC communication over real process pipes.
+    """
+    import sys
+    from mcp.client.stdio import stdio_client, StdioServerParameters
+
+    server_params = StdioServerParameters(
+        command=sys.executable,
+        args=["-m", "evidenceflow.mcp.corpus_server"],
+        env=None,
+    )
+    async with stdio_client(server_params) as (read_stream, write_stream):
+        async with ClientSession(read_stream, write_stream) as session:
+            await session.initialize()
+
+            # 1. list_tools
+            tools_result = await session.list_tools()
+            tool_names = [t.name for t in tools_result.tools]
+            assert "list_versions" in tool_names
+            assert "search_passages" in tool_names
+            assert "get_passage" in tool_names
+            assert "diff_sections" in tool_names
+
+            # 2. call list_versions
+            result = await session.call_tool("list_versions", {})
+            assert len(result.content) >= 1
+            payload = json.loads(result.content[0].text)
+            assert payload["status"] == "success"
+            assert set(payload["supported_versions"]) == {"14", "15", "16"}

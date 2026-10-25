@@ -130,6 +130,8 @@ uv run python -m evidenceflow.graph.workflow --thread-id "dba-session-1" --query
 EvidenceFlow exposes an inspectable, read-only Model Context Protocol (MCP) server over the versioned PostgreSQL documentation corpus:
 - **Stdio Transport**: Clean standard I/O communication using JSON-RPC. All application and diagnostic logging is strictly routed to `sys.stderr` to prevent wire protocol corruption.
 - **Read-Only Invariant**: All registered tools are strictly read-only. Mutation operations are prohibited.
+  - *Storage Note*: Qdrant runs without an API key in local development; read-only enforcement at this layer is architectural (only search/point query APIs are invoked; no mutation handlers exist).
+  - *Security Note*: Name-based tool validation is a pipeline contract guardrail, not a cryptographic or OS-level security boundary.
 - **The Four Front-Desk Tools**:
   1. `list_versions`: Discovers indexed versions (`14`, `15`, `16`), chunk counts, and Qdrant storage health.
   2. `search_passages`: Hybrid dense + lexical retrieval with version filtering, query length limits (<= 500 chars), and result clamping (1 <= limit <= 20).
@@ -146,7 +148,7 @@ uv run python -m evidenceflow.mcp.corpus_server
 ## Automated Testing & Benchmarks
 
 ### 1. Run the Full Test Suite
-Executes 53 automated tests covering prompt injections, out-of-scope detection, value verifier normalization, RBAC role restrictions, append-only triggers, process-restart recovery, and thread isolation:
+Executes 54 automated tests covering prompt injections, out-of-scope detection, value verifier normalization, RBAC role restrictions, append-only triggers, process-restart recovery, and thread isolation:
 ```powershell
 uv run pytest tests/ -v
 ```
