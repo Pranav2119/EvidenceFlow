@@ -11,7 +11,8 @@ import sys
 import re
 import difflib
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional, Annotated
+from pydantic import Field
 from mcp.server.fastmcp import FastMCP
 from qdrant_client.http import models
 
@@ -29,6 +30,11 @@ logger = logging.getLogger("corpus-mcp")
 
 VALID_VERSIONS = {"14", "15", "16"}
 CHUNK_ID_REGEX = re.compile(r"^pg(14|15|16)-[a-z0-9_-]+$", re.IGNORECASE)
+
+PostgresVersion = Literal["14", "15", "16"]
+PassageLimit = Annotated[int, Field(ge=1, le=20, default=5, description="Maximum number of passages to return (1-20, default 5)")]
+QueryStr = Annotated[str, Field(max_length=500, description="Technical search query or parameter name (max 500 chars)")]
+SettingStr = Annotated[str, Field(max_length=100, description="Parameter or section name to compare (e.g. 'log_checkpoints', 'vacuum_defer_cleanup_age')")]
 
 # FastMCP Server Instance
 mcp = FastMCP("corpus-mcp")
@@ -79,7 +85,11 @@ def _find_parameter_chunk(setting: str, version: str) -> Optional[Dict[str, Any]
 
 
 @mcp.tool()
-def search_passages(query: str, version: str = "16", limit: int = 5) -> Dict[str, Any]:
+def search_passages(
+    query: QueryStr,
+    version: PostgresVersion = "16",
+    limit: PassageLimit = 5,
+) -> Dict[str, Any]:
     """
     Searches official PostgreSQL technical documentation passages in Qdrant hybrid index.
     Always cite the returned chunk_id using footnote format [^chunk_id] when answering.
@@ -221,7 +231,11 @@ def list_versions() -> Dict[str, Any]:
 
 
 @mcp.tool()
-def diff_sections(setting: str, v1: str = "14", v2: str = "16") -> Dict[str, Any]:
+def diff_sections(
+    setting: SettingStr,
+    v1: PostgresVersion = "14",
+    v2: PostgresVersion = "16",
+) -> Dict[str, Any]:
     """
     Compares a specific configuration parameter or documentation section across two PostgreSQL
     versions (e.g. 14 vs 16).

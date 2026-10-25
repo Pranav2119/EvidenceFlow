@@ -4,7 +4,7 @@
 Accepted
 
 ## Date
-2026-10-25 (Revisit Date: 2025-06-01 or post-Tier 3 completion)
+2026-10-25 (Revisit Date: After Tier 3 completion, ~Q1 2027)
 
 ## Context
 EvidenceFlow AI requires exposing a standardized Model Context Protocol (MCP) interface for external AI clients (Claude Desktop, Gemini, Cursor/IDE sidecars, and internal agent workflows).
@@ -15,8 +15,7 @@ EvidenceFlow AI requires exposing a standardized Model Context Protocol (MCP) in
 Two primary framework options exist in the Python ecosystem:
 1. **Anthropic Official SDK (`mcp` package, `mcp.server.fastmcp.FastMCP`)**:
    - The official reference implementation of the Model Context Protocol maintained by Anthropic.
-   - Pinned at `mcp>=1.3.0,<2.0.0` for FastMCP v1 API stability (chosen to match the official SDK's FastMCP 1.0 API; confirm with course notes).
-   - In `mcp>=2.0.0`, `FastMCP` was refactored into `MCPServer`.
+   - Pinned at `mcp>=1.3.0,<2.0.0` for FastMCP 1.0 API stability (chosen to match the official SDK's FastMCP 1.0 API; confirm with course notes).
    - Uses Starlette/anyio for async concurrency, supports both `stdio` and `sse` transports, and provides native `ClientSession` support for testing.
 2. **Standalone `fastmcp` (3.x)**:
    - Independent package by Jeremiah Lowin (Prefect).
@@ -30,7 +29,7 @@ Two primary framework options exist in the Python ecosystem:
 | Evaluation Criteria | Official Anthropic SDK (`mcp.server.fastmcp`, `mcp<2`) | Standalone FastMCP (`fastmcp` 3.x) |
 | :--- | :--- | :--- |
 | **Protocol Conformity** | Reference implementation maintained directly by Anthropic / MCP Working Group. Zero schema drift. | Adheres to protocol, but abstractions and extensions wrap the underlying primitives. |
-| **API Stability** | FastMCP 1.0 API is frozen in `mcp<2` (`mcp==1.30.0`). (`mcp>=2` refactored FastMCP into `MCPServer`). | Active independent semantic releases; frequent feature evolution. |
+| **API Stability** | FastMCP 1.0 API is stable in `mcp<2` (`mcp==1.30.0`). | Active independent semantic releases; frequent feature evolution. |
 | **Client / Test Tooling** | Official `mcp.client.session.ClientSession` and in-memory anyio stream transports available out of the box. | Focuses primarily on server authoring and developer CLI conveniences. |
 | **Out-of-the-Box Auth & Rate Limiting** | **None.** Does not provide built-in rate-limiting or token-bucket middleware. | Includes built-in decorators and utilities for authentication and rate-limiting. |
 | **Dependency Footprint** | Lightweight, official dependency (`pydantic`, `anyio`, `starlette`, `httpx`). | Additional third-party dependency tree and release cadence. |
@@ -58,4 +57,4 @@ We select **Anthropic's Official MCP Python SDK (`mcp<2`)** (`from mcp.server.fa
 ## Consequences & Revisit Plan
 - Pyproject dependencies specify `mcp>=1.30.0,<2.0.0`.
 - All logging within stdio servers must strictly target `sys.stderr` to prevent JSON-RPC framing corruption on `stdout`.
-- **Revisit Date**: **2025-06-01** (or post-Tier 3 completion). At that milestone, we will evaluate whether to migrate to `mcp>=2.x` (`MCPServer` interface) or if the official SDK has stabilized higher-level server primitives.
+- **Revisit Date**: **After Tier 3 completion (estimated Q1 2027)**. At that milestone, we will evaluate whether to unpin or upgrade the `mcp` dependency once Tier 3 rate limiting and caching architectures are complete.
