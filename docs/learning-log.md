@@ -213,4 +213,60 @@ Following strict machine learning integrity protocols, the 25-question held-out 
    - `h22` (Tricky benign query: `ignore_system_indexes`) -> Correctly answered without false positive security block.
    - `h23` (Off-topic Python reverse string) -> Correctly abstained with `ABSTAINED`.
 
+---
+
+## Session 4: Day 5 PostgreSQL Checkpointer, Step Ledger, & Claim Audit Trail
+**Date**: 2026-10-25  
+**Focus**: ACID-compliant LangGraph state persistence (`PostgresSaver`), monotonic thread-wide step counter, immutable append-only audit tables (`turns`, `step_ledger`, `claim_audit`), least-privilege RBAC application role (`evidenceflow_app`), and PL/pgSQL engine triggers preventing `UPDATE`/`DELETE`/`TRUNCATE`.
+
+---
+
+### 1. Concepts Mastered & Architectural Hardening
+- **Defense-in-Depth Immutability**:
+  - *Layer 1 (RBAC Engine Permissions)*: Application runtime connects via `evidenceflow_app` having strictly `SELECT` and `INSERT` permissions on audit tables; `UPDATE`, `DELETE`, and `TRUNCATE` are revoked at the role level.
+  - *Layer 2 (PL/pgSQL Triggers)*: Row-level and statement-level triggers block any mutation on `turns`, `step_ledger`, and `claim_audit`, raising an exception even if an attacker gains table-level access.
+- **Monotonic Thread-Wide Step Counter**: `step_number` maintains chronological continuity across turns within a conversation thread (e.g., Turn 1: steps 1–5; Turn 2: steps 6–10).
+- **Separation of Privileged Migrations vs. Runtime Startup**: `checkpointer.setup()` and DDL operations execute exclusively during owner-role migration scripts (`migrate_postgres.py`), ensuring runtime services run under least privilege without schema modification rights.
+- **Destructive Operation Safety**: Database teardown tools (`drop_all_tables`) verify the connected database via `SELECT current_database()` and refuse execution unless the database name ends in `_test`.
+
+---
+
+## Session 5: Day 6 FastMCP Read-Only Corpus Server
+**Date**: 2026-10-25  
+**Focus**: Model Context Protocol (MCP) server integration using official SDK `mcp.server.fastmcp`, exposing versioned PostgreSQL documentation tools over stdio transport.
+
+> “Day 6 puts a read-only MCP front desk on my docs, with four tools: search, get one passage, list versions, and compare a setting between versions. It returns evidence, and the AI client writes the answer.”
+
+---
+
+### 1. Concepts Mastered & Engineering Implementations
+
+#### A. FastMCP Framework Choice & Course Alignment (ADR-001)
+- Evaluated Anthropic's official SDK (`mcp.server.fastmcp`, pinned `mcp<2`, `1.30.0`) versus standalone third-party `fastmcp` (3.x).
+- Standardized on `mcp.server.fastmcp`: exactly matches the curriculum taught in the DeepLearning.AI / Anthropic course *"Building Systems with the Model Context Protocol"* and provides native compatibility with official MCP client ecosystems.
+- Fully documented in [docs/design/adr_001_fastmcp_framework.md](file:///C:/Users/Pranav%20Sakhalkar/Desktop/GitHub_AI/EvidenceFlowSetup/EvidenceFlow/docs/design/adr_001_fastmcp_framework.md).
+
+#### B. The Four Read-Only Front-Desk Tools
+1. **`list_versions`**: Returns indexed PostgreSQL documentation versions (`14`, `15`, `16`) along with total chunk counts and Qdrant storage health.
+2. **`search_passages`**: Executes hybrid semantic + lexical search over Qdrant with hard version filtering, query string length limits ($\le 500$ chars), and result clamping ($1 \le \text{limit} \le 20$).
+3. **`get_passage`**: Performs direct point retrieval from Qdrant by validated `chunk_id` (enforcing pattern `^pg(14|15|16)-[a-z0-9_-]+$`). Strictly Qdrant-backed; zero local filesystem fallbacks.
+4. **`diff_sections`**: Cross-version parameter diffing that extracts default values via regular expressions and outputs unified diff representations for side-by-side comparison.
+
+#### C. Verified Real-World Parameter Differences
+- **`log_checkpoints`**:
+  - PG14: `The default is off.`
+  - PG15 / PG16: `The default is on.`
+- **`vacuum_defer_cleanup_age`**:
+  - PG14 / PG15: Present (`The default is zero transactions...`).
+  - PG16: Removed (obsoleted by replication slots; documented in v16 release notes).
+- **`vacuum_buffer_usage_limit`**:
+  - PG14 / PG15: Not present.
+  - PG16: Added as a new configuration parameter (`The default value is 256 kB`).
+
+#### D. Wire Protocol Safety & Security Guards
+- **Stdio Transport Cleanliness**: Zero `print()` statements to `stdout`. All operational logging routed to `sys.stderr` via dedicated stream handlers to prevent corrupting JSON-RPC communication frames.
+- **Automated Anti-Mutation Test**: Integrated automated test inspection verifying that no registered tool names on `corpus-mcp` match any write/mutation keywords (`create`, `insert`, `update`, `delete`, `drop`, `write`, `modify`, `alter`, `mutate`, `put`, `patch`, `remove`, `add`, `set`, `save`, `post`, `truncate`).
+- **In-Memory Client Testing**: Verified all tools through actual `ClientSession` instances connected over `anyio` memory streams (`test_corpus_mcp.py`).
+
+
 

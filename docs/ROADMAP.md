@@ -31,7 +31,7 @@ Every Day/Task strictly follows this 3-phase cadence:
 - [x] Day 3: Baseline LangGraph state machine (`Planner` -> `Retriever` -> `AnswerWriter` -> `L1Verifier`)
 - [x] Day 4: Abstention mechanism and guardrails v1: input guard, retrieval keyword/score guard, per-citation value-binding verifier (L1.5), fail-closed fallback, standardized abstention routing. Tuning set: 0 wrong answers / 0 wrong refusals (optimistic, tuned on). Fresh held-out set: 4/15 wrong refusals and 1/9 wrong answers before fixes. Known weak spots in docs/known-limitations.
 - [x] Day 5: PostgreSQL checkpointer, step ledger, and claim-evidence audit trail tables
-- [ ] Day 6: FastMCP `corpus-mcp` read-only server
+- [x] Day 6: FastMCP `corpus-mcp` read-only server
 - [ ] Day 7: Benchmark v1 with deterministic scoring & baseline measurements recorded in `experiments.md`
 
 ### Tier 2: The Differentiator (Memory & 5-Layer Cache)
