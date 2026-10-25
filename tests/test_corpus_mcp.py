@@ -137,6 +137,27 @@ async def test_search_passages_via_client_session(mcp_session):
     assert "Always cite the returned chunk_id" in data["guidance"]
 
 
+@pytest.mark.anyio
+async def test_search_passages_validation_error_via_client_session(mcp_session):
+    """
+    Day 6 Check 2: Verifies that invoking search_passages with invalid parameters
+    (version='17' and limit=50) through an MCP ClientSession returns a clean validation
+    error (isError=True) with literal enum and bound mismatch details.
+    """
+    res = await mcp_session.call_tool(
+        "search_passages",
+        {"query": "work_mem", "version": "17", "limit": 50},
+    )
+    assert res.isError is True
+    assert len(res.content) >= 1
+    err_text = res.content[0].text
+    assert "validation error" in err_text.lower()
+    assert "version" in err_text
+    assert "'14', '15' or '16'" in err_text
+    assert "limit" in err_text
+    assert "less than or equal to 20" in err_text
+
+
 # --- 5. get_passage Tool (Qdrant Only) & Break-It Handling ---
 
 @pytest.mark.anyio

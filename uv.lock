@@ -368,7 +368,7 @@ requires-dist = [
     { name = "google-genai", specifier = ">=2.33.0" },
     { name = "langgraph", specifier = ">=1.2.17" },
     { name = "langgraph-checkpoint-postgres", specifier = ">=2.0.0" },
-    { name = "mcp", specifier = "<2" },
+    { name = "mcp", specifier = ">=1.30.0,<2.0.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2.0" },
     { name = "psycopg-pool", specifier = ">=3.2.0" },
     { name = "pydantic-settings", specifier = ">=2.16.1" },

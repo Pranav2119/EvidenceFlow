@@ -148,7 +148,7 @@ uv run python -m evidenceflow.mcp.corpus_server
 ## Automated Testing & Benchmarks
 
 ### 1. Run the Full Test Suite
-Executes 54 automated tests covering prompt injections, out-of-scope detection, value verifier normalization, RBAC role restrictions, append-only triggers, process-restart recovery, and thread isolation:
+Executes 55 automated tests covering prompt injections, out-of-scope detection, value verifier normalization, RBAC role restrictions, append-only triggers, process-restart recovery, and thread isolation:
 ```powershell
 uv run pytest tests/ -v
 ```

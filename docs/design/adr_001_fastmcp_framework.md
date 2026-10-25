@@ -15,7 +15,7 @@ EvidenceFlow AI requires exposing a standardized Model Context Protocol (MCP) in
 Two primary framework options exist in the Python ecosystem:
 1. **Anthropic Official SDK (`mcp` package, `mcp.server.fastmcp.FastMCP`)**:
    - The official reference implementation of the Model Context Protocol maintained by Anthropic.
-   - Pinned at `mcp>=1.3.0,<2.0.0` for FastMCP 1.0 API stability (chosen to match the official SDK's FastMCP 1.0 API; confirm with course notes).
+   - Pinned at `mcp>=1.30.0,<2.0.0` for FastMCP 1.0 API stability (chosen to match the official SDK's FastMCP 1.0 API; confirm with course notes).
    - Uses Starlette/anyio for async concurrency, supports both `stdio` and `sse` transports, and provides native `ClientSession` support for testing.
 2. **Standalone `fastmcp` (3.x)**:
    - Independent package by Jeremiah Lowin (Prefect).
