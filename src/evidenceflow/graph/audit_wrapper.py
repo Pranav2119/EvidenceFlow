@@ -63,12 +63,22 @@ def audit_node_wrapper(
         status = "abstained" if is_abstained else "success"
 
         # Attribute decision origin (rule / llm / fallback)
+        # Requirement: verifier, guardrails, planner, retriever are "rule".
+        # "fallback" is only the offline answer writer, and "llm" only when Gemini wrote the text.
         if node_name == "answer_writer":
-            answer = result.get("draft_answer", "")
-            if "According to PostgreSQL" in answer:
-                decided_by = "fallback"
-            else:
+            new_audit = result.get("audit_trail", [])
+            synth_mode = None
+            if new_audit and isinstance(new_audit, list):
+                latest_entry = new_audit[-1]
+                if isinstance(latest_entry, dict):
+                    synth_mode = latest_entry.get("synthesis_mode")
+            if not synth_mode:
+                synth_mode = result.get("synthesis_mode")
+
+            if synth_mode == "llm":
                 decided_by = "llm"
+            else:
+                decided_by = "fallback"
         else:
             decided_by = "rule"
 

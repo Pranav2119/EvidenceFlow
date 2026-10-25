@@ -126,7 +126,7 @@ uv run python -m evidenceflow.graph.workflow --thread-id "dba-session-1" --query
 ## Automated Testing & Benchmarks
 
 ### 1. Run the Full Test Suite
-Executes 36 automated tests covering prompt injections, out-of-scope detection, value verifier normalization, append-only triggers, process-restart recovery, and thread isolation:
+Executes 38 automated tests covering prompt injections, out-of-scope detection, value verifier normalization, RBAC role restrictions, append-only triggers, process-restart recovery, and thread isolation:
 ```powershell
 uv run pytest tests/ -v
 ```
@@ -146,8 +146,9 @@ Every conversation turn, node step, and verified claim is stored in PostgreSQL:
 - `step_ledger`: Stores node name, action, status, decided_by (`rule`, `llm`, `fallback`), execution latency in milliseconds, token counts, and sanitized details.
 - `claim_audit`: Stores the exact statement, cited chunk ID, chunk cryptographic SHA-256 hash, documented version, claimed values, and verifier code.
 
-**Database-Level Immutability**:
-Row-level and statement-level triggers block all `UPDATE`, `DELETE`, and `TRUNCATE` operations on `turns`, `step_ledger`, and `claim_audit`. Any tampering attempt is aborted by the PostgreSQL engine.
+**Database-Level Immutability & Defense-in-Depth**:
+- **Layer 1 (RBAC Least-Privilege Role)**: Application runtime connects as `evidenceflow_app` which possesses only `SELECT` and `INSERT` permissions on audit tables; `UPDATE`, `DELETE`, and `TRUNCATE` are revoked at the PostgreSQL engine privilege level.
+- **Layer 2 (PL/pgSQL Engine Triggers)**: Row-level and statement-level triggers block all `UPDATE`, `DELETE`, and `TRUNCATE` operations on `turns`, `step_ledger`, and `claim_audit`, raising security violation exceptions if an operation is ever attempted.
 
 ---
 

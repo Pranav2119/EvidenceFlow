@@ -163,18 +163,21 @@ def answer_writer_node(state: EvidenceFlowState) -> Dict[str, Any]:
             "node": "answer_writer",
             "action": "abstained",
             "reason": reason,
+            "synthesis_mode": "fallback",
         }
         return {
             "draft_answer": f"I cannot answer this question because no relevant documentation was found for PostgreSQL {target_version}.",
             "citations": [],
             "is_abstained": True,
             "abstention_reason": reason,
+            "synthesis_mode": "fallback",
             "audit_trail": existing_audit + [audit_entry],
         }
 
     settings = get_settings()
     draft_answer = ""
     token_usage: Dict[str, Any] = {}
+    synthesis_mode = "fallback"
 
     # D3-1: Check for real API key
     if is_valid_gemini_key(settings.GEMINI_API_KEY):
@@ -189,6 +192,7 @@ def answer_writer_node(state: EvidenceFlowState) -> Dict[str, Any]:
                 contents=prompt,
             )
             draft_answer = response.text.strip()
+            synthesis_mode = "llm"
 
             # D3-13: Capture token metrics for ablation & benchmarking
             if hasattr(response, "usage_metadata") and response.usage_metadata:
@@ -202,9 +206,11 @@ def answer_writer_node(state: EvidenceFlowState) -> Dict[str, Any]:
         except (APIError, ClientError, ServerError, ConnectionError, TimeoutError) as e:
             logger.warning("Gemini generation API call failed (%s), falling back to deterministic synthesis.", e)
             draft_answer = deterministic_fallback_answer(query, target_version, passages)
+            synthesis_mode = "fallback"
     else:
         logger.info("No active Gemini API key configured. Using deterministic synthesis.")
         draft_answer = deterministic_fallback_answer(query, target_version, passages)
+        synthesis_mode = "fallback"
 
     # Check for LLM abstention statement
     is_abstained = False
@@ -221,6 +227,7 @@ def answer_writer_node(state: EvidenceFlowState) -> Dict[str, Any]:
         "action": "answer_drafted",
         "citations_count": len(citations),
         "is_abstained": is_abstained,
+        "synthesis_mode": synthesis_mode,
         **token_usage,
     }
 
@@ -229,5 +236,6 @@ def answer_writer_node(state: EvidenceFlowState) -> Dict[str, Any]:
         "citations": citations,
         "is_abstained": is_abstained,
         "abstention_reason": abstention_reason,
+        "synthesis_mode": synthesis_mode,
         "audit_trail": existing_audit + [audit_entry],
     }

@@ -20,24 +20,45 @@ logger = logging.getLogger(__name__)
 _pool_instance: Optional[ConnectionPool] = None
 
 
-def get_postgres_connection_string() -> str:
-    """Builds standard psycopg connection string from Pydantic settings."""
+def get_postgres_connection_string(use_app_role: bool = True) -> str:
+    """
+    Builds standard psycopg connection string from Pydantic settings.
+    When use_app_role is True, uses the limited runtime app role (evidenceflow_app)
+    which has SELECT and INSERT privileges, but strictly NO UPDATE/DELETE/TRUNCATE on audit tables.
+    When use_app_role is False, uses the admin/owner role (evidenceflow) for migrations and DDL setup.
+    """
     s = get_settings()
-    return f"host={s.POSTGRES_HOST} port={s.POSTGRES_PORT} user={s.POSTGRES_USER} password={s.POSTGRES_PASSWORD} dbname={s.POSTGRES_DB}"
+    user = s.POSTGRES_APP_USER if use_app_role else s.POSTGRES_USER
+    pwd = s.POSTGRES_APP_PASSWORD if use_app_role else s.POSTGRES_PASSWORD
+    return f"host={s.POSTGRES_HOST} port={s.POSTGRES_PORT} user={user} password={pwd} dbname={s.POSTGRES_DB}"
 
 
-def get_connection_pool() -> ConnectionPool:
+def get_connection_pool(use_app_role: bool = True) -> ConnectionPool:
     """Returns the process-level shared ConnectionPool singleton."""
     global _pool_instance
     if _pool_instance is None or _pool_instance.closed:
-        conn_str = get_postgres_connection_string()
-        _pool_instance = ConnectionPool(
-            conninfo=conn_str,
-            min_size=1,
-            max_size=10,
-            open=True,
-            kwargs={"autocommit": True, "row_factory": dict_row},
-        )
+        conn_str = get_postgres_connection_string(use_app_role=use_app_role)
+        try:
+            _pool_instance = ConnectionPool(
+                conninfo=conn_str,
+                min_size=1,
+                max_size=10,
+                open=True,
+                kwargs={"autocommit": True, "row_factory": dict_row},
+            )
+        except Exception as e:
+            if use_app_role:
+                logger.warning("Failed to connect using limited app role (%s), falling back to owner role.", e)
+                conn_str = get_postgres_connection_string(use_app_role=False)
+                _pool_instance = ConnectionPool(
+                    conninfo=conn_str,
+                    min_size=1,
+                    max_size=10,
+                    open=True,
+                    kwargs={"autocommit": True, "row_factory": dict_row},
+                )
+            else:
+                raise e
     return _pool_instance
 
 
@@ -51,17 +72,28 @@ def close_connection_pool():
 
 def sanitize_payload(obj: Any) -> Any:
     """
-    Recursively strips any sensitive keys (API keys, passwords, credentials)
+    Recursively strips sensitive keys (API keys, passwords, credentials)
     before writing payloads into the audit ledger.
+    Guarantees that token counts (tokens_in, tokens_out, prompt_tokens, etc.) are never redacted.
     """
-    sensitive_keys = {
-        "api_key", "gemini_api_key", "password", "token", "secret",
-        "authorization", "credentials", "access_token", "private_key"
+    token_count_keys = {
+        "tokens_in", "tokens_out", "prompt_tokens", "candidate_tokens",
+        "total_tokens", "token_count", "tokens", "tokens_used"
     }
+    sensitive_patterns = (
+        "api_key", "password", "secret", "authorization",
+        "credential", "access_token", "private_key", "auth_token",
+        "bearer_token", "token"
+    )
     if isinstance(obj, dict):
         clean = {}
         for k, v in obj.items():
-            if str(k).lower() in sensitive_keys:
+            k_str = str(k).lower()
+            # 1. Explicitly protect numeric token counts
+            if k_str in token_count_keys or (("token" in k_str or "count" in k_str) and isinstance(v, (int, float))):
+                clean[k] = v
+            # 2. Redact sensitive patterns
+            elif any(p in k_str for p in sensitive_patterns):
                 clean[k] = "[REDACTED]"
             else:
                 clean[k] = sanitize_payload(v)

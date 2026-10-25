@@ -41,11 +41,19 @@ class Settings(BaseSettings):
     # --- PostgreSQL Settings (Checkpointer, Step Ledger & Audit Trail) ---
     POSTGRES_USER: str = Field(
         default="evidenceflow",
-        description="PostgreSQL username",
+        description="PostgreSQL admin/owner username (used for migrations and schema setup)",
     )
     POSTGRES_PASSWORD: str = Field(
         default="evidenceflow_dev_secret",
-        description="PostgreSQL password",
+        description="PostgreSQL admin/owner password",
+    )
+    POSTGRES_APP_USER: str = Field(
+        default="evidenceflow_app",
+        description="Limited runtime PostgreSQL username without UPDATE/DELETE/TRUNCATE on audit tables",
+    )
+    POSTGRES_APP_PASSWORD: str = Field(
+        default="evidenceflow_app_secret",
+        description="Limited runtime PostgreSQL password",
     )
     POSTGRES_DB: str = Field(
         default="evidenceflow_db",
