@@ -45,24 +45,54 @@ def build_grounded_prompt(query: str, version: str, passages: List[Dict[str, Any
 def deterministic_fallback_answer(query: str, version: str, passages: List[Dict[str, Any]]) -> str:
     """
     Zero-LLM deterministic synthesis template.
-    D3-12 fix: Inspects all passages to find the chunk whose title/chunk_id/content
-    best matches the query keywords, rather than blindly citing passages[0].
+    Fails closed: Answers ONLY when the question explicitly names a setting that
+    appears in the retrieved passages; otherwise declares insufficient evidence.
     """
     if not passages:
         return f"Insufficient evidence in the PostgreSQL {version} documentation."
 
-    # Identify significant query keywords (snake_case or terms > 3 chars)
-    query_terms = [t.lower() for t in re.findall(r"\b[a-z0-9_]{3,}\b", query.lower())]
+    # Identify recognized setting names mentioned in query
+    from evidenceflow.storage.bm25 import get_bm25_index
+    try:
+        known_settings = get_bm25_index().setting_names
+    except Exception:
+        known_settings = set()
 
-    best_passage = passages[0]
+    words = set(re.findall(r"\b[a-z0-9_]+\b", query.lower()))
+    named_settings = [w for w in words if w in known_settings or ("_" in w and len(w) > 3)]
+    for s in known_settings:
+        if len(s) > 4 and "_" in s and s.replace("_", " ") in query.lower():
+            if s not in named_settings:
+                named_settings.append(s)
+
+    if not named_settings:
+        logger.info("Deterministic fallback: question does not name any indexed setting. Failing closed.")
+        return f"Insufficient evidence in the PostgreSQL {version} documentation."
+
+    # Find the best passage that contains one of the named settings
+    best_passage = None
     best_match_count = -1
 
     for p in passages:
-        searchable_text = f"{p.get('chunk_id', '')} {p.get('title', '')} {p.get('content', '')}".lower()
-        matches = sum(1 for term in query_terms if term in searchable_text)
-        if matches > best_match_count:
-            best_match_count = matches
-            best_passage = p
+        cid = p.get("chunk_id", "").lower()
+        title = p.get("title", "").lower()
+        content = p.get("content", "").lower()
+
+        # Require that at least one named setting appears in the passage
+        matched_named = [s for s in named_settings if s.replace("_", "-") in cid or s in title or s in content]
+        if matched_named:
+            match_count = len(matched_named)
+            # Give strong priority to chunks whose ID or title directly defines the parameter
+            for s in matched_named:
+                if s.replace("_", "-") in cid or s in title:
+                    match_count += 5
+            if match_count > best_match_count:
+                best_match_count = match_count
+                best_passage = p
+
+    if not best_passage:
+        logger.info("Deterministic fallback: named settings do not appear in retrieved chunks. Failing closed.")
+        return f"Insufficient evidence in the PostgreSQL {version} documentation."
 
     cid = best_passage["chunk_id"]
     section = best_passage.get("section", "Documentation")

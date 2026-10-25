@@ -123,6 +123,10 @@ class Settings(BaseSettings):
         default=5,
         description="Max passages returned per retrieval query (D3-14: config-driven, not hardcoded in node)",
     )
+    RETRIEVAL_SCORE_THRESHOLD: float = Field(
+        default=0.60,
+        description="Minimum vector similarity score cutoff; lower scores trigger clean abstention",
+    )
 
     # [Fix 1.2] Fail-fast helper for LLM-dependent code paths
     def require_gemini_key(self) -> str:
