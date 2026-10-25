@@ -104,6 +104,19 @@ The fallback text template prefixes the answer with the documentation section na
 
 ---
 
+## 5. Multi-Turn Follow-Up Reasoning & Entity Resolution (Deferred to Tier 2)
+
+### Symptom & Current Scope Boundary
+When a user asks a follow-up question that relies on implicit context from an earlier turn (e.g. Turn 1: *"What is the default of shared_buffers in PostgreSQL 16?"*, Turn 2: *"What about version 15?"*), the Day 5 pipeline recovers previous thread state from the checkpointer, but does **not** perform conversational query rewriting or cross-turn entity resolution.
+- **Observed Behavior**:
+  - The PostgreSQL checkpointer safely persists and recovers graph state across server restarts for a given `thread_id`.
+  - However, the follow-up query *"What about version 15?"* contains no explicit parameter name. Without a conversational entity resolution layer, the query retriever searches literally for generic tokens, missing the intended target (`shared_buffers`).
+- **Scope Justification**:
+  - Day 5 specifically implements thread isolation, process-restart state recovery, and immutable audit logging in PostgreSQL.
+  - Conversational query rewriting, entity resolution across turns, and semantic turn graph memory (`:Turn`, `:Entity`, `:Claim`) are scheduled as core components of **Tier 2 (Neo4j Conversational Graph Memory)**.
+
+---
+
 ## Summary Matrix
 
 | Limitation | Severity | Trigger Condition | Current Safeguard | Planned Architectural Fix |
@@ -112,3 +125,4 @@ The fallback text template prefixes the answer with the documentation section na
 | **Thin Retrieval Margin (`h10`)** | Medium | Paraphrased question without setting name | Dense + BM25 RRF fusion (rank #4) | Adaptive `RETRIEVAL_LIMIT` (expand to 8-10 for descriptive queries) |
 | **Release Note Bleed (`h14`)** | Low / Label Discrepancy | Inquiring about a removed or deprecated setting | Model cites release note | `doc_type` metadata partitioning (`configuration` vs `release_notes`) |
 | **Section Num as Value (`g11`)** | Medium / Fallback Only | Deterministic fallback synthesizes sentence containing section number | Fail-closed verifier | Strip section/chapter numbers from candidate claim value extraction |
+| **Multi-Turn Entity Resolution** | Deferred / Tier 2 | Follow-up questions with implicit entities (*"what about v15?"*) | Checkpointer recovers state; query requires explicit parameter | Tier 2 Neo4j conversational graph memory & query rewriting |
