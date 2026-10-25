@@ -76,19 +76,29 @@ def run_migrations(migrations_dir: Optional[Path] = None, dbname: Optional[str] 
 def drop_all_tables(dbname: Optional[str] = None):
     """
     Drops custom audit tables and checkpointer tables (for clean test isolation).
-    Strictly refuses to run unless the target database name ends with '_test'.
+    Strictly refuses to run unless the target database name AND the actual connected
+    database (verified via SELECT current_database()) end with '_test'.
     """
     s = get_settings()
     target_db = dbname or s.POSTGRES_DB
     if not target_db.endswith("_test"):
         raise RuntimeError(
-            f"Safety Violation: drop_all_tables() is only permitted on test databases ending in '_test'. "
-            f"Attempted execution on database '{target_db}'."
+            f"Safety Violation: drop_all_tables() target dbname '{target_db}' does not end in '_test'."
         )
 
     conn_str = get_postgres_connection_string(dbname=target_db)
     with psycopg.connect(conn_str, autocommit=True) as conn:
         with conn.cursor() as cur:
+            # Engine-level safety verification: query current_database() directly from PostgreSQL session
+            cur.execute("SELECT current_database();")
+            row = cur.fetchone()
+            actual_connected_db = str(row[0]) if row else ""
+            if not actual_connected_db.endswith("_test"):
+                raise RuntimeError(
+                    f"Safety Violation: Connected database '{actual_connected_db}' does not end in '_test'. "
+                    f"drop_all_tables() aborted to protect non-test data."
+                )
+
             # Drop custom tables
             cur.execute("""
                 DROP TABLE IF EXISTS claim_audit CASCADE;
@@ -104,7 +114,7 @@ def drop_all_tables(dbname: Optional[str] = None):
                 DROP TABLE IF EXISTS checkpoints CASCADE;
                 DROP TABLE IF EXISTS checkpoint_migrations CASCADE;
             """)
-    logger.info("All EvidenceFlow PostgreSQL tables dropped on test database '%s'.", target_db)
+    logger.info("All EvidenceFlow PostgreSQL tables dropped on test database '%s'.", actual_connected_db)
 
 
 def main():

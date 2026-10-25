@@ -479,6 +479,19 @@ def test_fresh_database_setup_and_limited_role_lifecycle():
     assert "Safety Violation" in str(exc_info.value)
     assert "evidenceflow_db" in str(exc_info.value)
 
+    # 1b. Verify session-level SELECT current_database() guard catches database session mismatches
+    from unittest.mock import patch, MagicMock
+    with patch("psycopg.connect") as mock_connect:
+        mock_conn = MagicMock()
+        mock_cur = MagicMock()
+        mock_cur.fetchone.return_value = ("evidenceflow_db",)  # Spoofed connected session
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cur
+        mock_connect.return_value.__enter__.return_value = mock_conn
+
+        with pytest.raises(RuntimeError) as exc_info_session:
+            drop_all_tables(dbname="spoofed_test")
+        assert "Connected database 'evidenceflow_db' does not end in '_test'" in str(exc_info_session.value)
+
     # 2. Reset test database tables using owner role
     close_connection_pool()
     drop_all_tables(dbname=TEST_DB)
