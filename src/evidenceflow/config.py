@@ -9,7 +9,7 @@ Review fixes applied (2026-10-24):
 """
 
 from functools import lru_cache
-from pydantic import Field, computed_field
+from pydantic import Field, computed_field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -41,11 +41,19 @@ class Settings(BaseSettings):
     # --- PostgreSQL Settings (Checkpointer, Step Ledger & Audit Trail) ---
     POSTGRES_USER: str = Field(
         default="evidenceflow",
-        description="PostgreSQL username",
+        description="PostgreSQL admin/owner username (used for migrations and schema setup)",
     )
     POSTGRES_PASSWORD: str = Field(
         default="evidenceflow_dev_secret",
-        description="PostgreSQL password",
+        description="PostgreSQL admin/owner password",
+    )
+    POSTGRES_APP_USER: str = Field(
+        default="evidenceflow_app",
+        description="Limited runtime PostgreSQL username without UPDATE/DELETE/TRUNCATE on audit tables",
+    )
+    POSTGRES_APP_PASSWORD: str = Field(
+        default="evidenceflow_app_secret",
+        description="Limited runtime PostgreSQL password",
     )
     POSTGRES_DB: str = Field(
         default="evidenceflow_db",
@@ -137,6 +145,25 @@ class Settings(BaseSettings):
                 "Add it to your .env file: GEMINI_API_KEY=your_key_here"
             )
         return self.GEMINI_API_KEY
+
+    @model_validator(mode="after")
+    def validate_production_secrets(self) -> "Settings":
+        """Refuses to start when running in production with local-dev placeholder passwords."""
+        if str(self.APP_ENV).lower() in ("production", "prod"):
+            dev_placeholders = {
+                "evidenceflow_dev_secret",
+                "evidenceflow_app_secret",
+                "evidenceflow_graph_secret",
+                "changeme",
+                "password",
+            }
+            if self.POSTGRES_PASSWORD in dev_placeholders:
+                raise ValueError("Security Violation: POSTGRES_PASSWORD contains local-dev placeholder in production environment.")
+            if self.POSTGRES_APP_PASSWORD in dev_placeholders:
+                raise ValueError("Security Violation: POSTGRES_APP_PASSWORD contains local-dev placeholder in production environment.")
+            if self.NEO4J_PASSWORD in dev_placeholders:
+                raise ValueError("Security Violation: NEO4J_PASSWORD contains local-dev placeholder in production environment.")
+        return self
 
 
 # [Fix 1.3] Lazy singleton — .env file I/O only happens on first call, not at import time

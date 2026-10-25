@@ -27,10 +27,10 @@ Every Day/Task strictly follows this 3-phase cadence:
 ### Tier 1: Measure First (Baseline Pipeline & Corpus Ingestion)
 - [x] Day 0: Tooling installs (pinned uv/Python, Docker Compose, Git init, .env validation)
 - [x] Day 1: Versioned PostgreSQL Documentation parser & chunker with SHA-256 hashes
-- [x] Day 2: Qdrant vector store setup with dense + BM25 hybrid search & version payload filters
+- [x] Day 2: Qdrant vector store with dense search and version payload filters (BM25 sparse leg was wired in during Day 4 Fix 3; Day 2 originally ran dense-only)
 - [x] Day 3: Baseline LangGraph state machine (`Planner` -> `Retriever` -> `AnswerWriter` -> `L1Verifier`)
-- [x] Day 4: Standardized Abstention mechanism & input/output guardrails v1 (Hardened: 40-Q Exam Runner, 5-Threshold Tuning Sweep, L2 Proximity Verifier, 100.0% Security & Precision)
-- [ ] Day 5: PostgreSQL checkpointer, step ledger, and claim-evidence audit trail tables
+- [x] Day 4: Abstention mechanism and guardrails v1: input guard, retrieval keyword/score guard, per-citation value-binding verifier (L1.5), fail-closed fallback, standardized abstention routing. Tuning set: 0 wrong answers / 0 wrong refusals (optimistic, tuned on). Fresh held-out set: 4/15 wrong refusals and 1/9 wrong answers before fixes. Known weak spots in docs/known-limitations.
+- [x] Day 5: PostgreSQL checkpointer, step ledger, and claim-evidence audit trail tables
 - [ ] Day 6: FastMCP `corpus-mcp` read-only server
 - [ ] Day 7: Benchmark v1 with deterministic scoring & baseline measurements recorded in `experiments.md`
 
