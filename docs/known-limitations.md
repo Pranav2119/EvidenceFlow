@@ -131,6 +131,15 @@ The sequential step counter in `step_ledger` is computed via `SELECT COALESCE(MA
 
 ---
 
+## 7. FastMCP Corpus Server Read-Only Scope & Credential Boundaries (Day 6)
+
+### Symptom & Scope Boundary
+1. **Local Development Storage Credentials**: In local development, Qdrant runs with default local access without an API key. Read-only enforcement at this layer is **architectural / procedural** (the server exposes and calls search and point query APIs only; it contains no indexing or point upsert routines). In production, Qdrant must be provisioned with a dedicated read-only API key.
+2. **Contract Guardrail vs. Security Boundary**: The automated test `test_no_write_tools_registered_on_corpus_mcp` inspects registered tool names against write verbs as a pipeline linting/contract guardrail; it is not an OS-level or cryptographic security boundary.
+3. **Out-of-the-Box Rate Limiting & Auth**: Anthropic's FastMCP 1.0 does not include built-in rate-limiting or token-bucket middleware. External client rate limiting and authenticated role checks are deferred to Tier 3.
+
+---
+
 ## Summary Matrix
 
 | Limitation | Severity | Trigger Condition | Current Safeguard | Planned Architectural Fix |
@@ -141,3 +150,4 @@ The sequential step counter in `step_ledger` is computed via `SELECT COALESCE(MA
 | **Section Num as Value (`g11`)** | Medium / Fallback Only | Deterministic fallback synthesizes sentence containing section number | Fail-closed verifier | Strip section/chapter numbers from candidate claim value extraction |
 | **Multi-Turn Entity Resolution** | Deferred / Tier 2 | Follow-up questions with implicit entities (*"what about v15?"*) | Checkpointer recovers state; query requires explicit parameter | Tier 2 Neo4j conversational graph memory & query rewriting |
 | **Concurrent Step Counter Race** | Low / Sequential by Design | Simultaneous parallel calls on the exact same `thread_id` | Monotonic `MAX(step_number) + 1` query | Row-level locking (`FOR UPDATE`) or atomic PostgreSQL sequence |
+| **MCP Credential Isolation** | Architectural Boundary | Direct access to Qdrant without dedicated read-only key | Procedural (read APIs only) + Tool Name Linting Guard | Provision read-only Qdrant API key in production |

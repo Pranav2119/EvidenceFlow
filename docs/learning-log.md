@@ -242,8 +242,9 @@ Following strict machine learning integrity protocols, the 25-question held-out 
 ### 1. Concepts Mastered & Engineering Implementations
 
 #### A. FastMCP Framework Choice & Course Alignment (ADR-001)
-- Evaluated Anthropic's official SDK (`mcp.server.fastmcp`, pinned `mcp<2`, `1.30.0`) versus standalone third-party `fastmcp` (3.x).
-- Standardized on `mcp.server.fastmcp`: exactly matches the curriculum taught in the DeepLearning.AI / Anthropic course *"Building Systems with the Model Context Protocol"* and provides native compatibility with official MCP client ecosystems.
+- Evaluated Anthropic's official SDK (`mcp.server.fastmcp`, pinned `mcp>=1.30.0,<2.0.0`) versus standalone third-party `fastmcp` (3.x).
+- Standardized on `mcp.server.fastmcp` (pinned `mcp>=1.30.0,<2.0.0`): chosen to match the official SDK's FastMCP 1.0 API (confirm with course notes).
+- Explicit trade-off documented: FastMCP 1.0 does not include out-of-the-box rate limiting or authentication; these primitives must be hand-built in Tier 3 using custom ASGI middleware or decorators. Revisit date established: After Tier 3 completion (~Q1 2027).
 - Fully documented in [docs/design/adr_001_fastmcp_framework.md](file:///C:/Users/Pranav%20Sakhalkar/Desktop/GitHub_AI/EvidenceFlowSetup/EvidenceFlow/docs/design/adr_001_fastmcp_framework.md).
 
 #### B. The Four Read-Only Front-Desk Tools
@@ -263,10 +264,11 @@ Following strict machine learning integrity protocols, the 25-question held-out 
   - PG14 / PG15: Not present.
   - PG16: Added as a new configuration parameter (`The default value is 256 kB`).
 
-#### D. Wire Protocol Safety & Security Guards
-- **Stdio Transport Cleanliness**: Zero `print()` statements to `stdout`. All operational logging routed to `sys.stderr` via dedicated stream handlers to prevent corrupting JSON-RPC communication frames.
-- **Automated Anti-Mutation Test**: Integrated automated test inspection verifying that no registered tool names on `corpus-mcp` match any write/mutation keywords (`create`, `insert`, `update`, `delete`, `drop`, `write`, `modify`, `alter`, `mutate`, `put`, `patch`, `remove`, `add`, `set`, `save`, `post`, `truncate`).
-- **In-Memory Client Testing**: Verified all tools through actual `ClientSession` instances connected over `anyio` memory streams (`test_corpus_mcp.py`).
+#### D. Wire Protocol Safety, Typing & Security Guards
+- **Stdio Transport NDJSON Framing**: MCP stdio transport uses newline-delimited JSON (NDJSON / JSON Lines) framing without `Content-Length` headers (which belong to LSP). All server logging routes strictly to `sys.stderr` via dedicated stream handlers to avoid corrupting stdout message frames.
+- **Schema Typing & Input Bounds**: Annotated tools with `Literal["14", "15", "16"]` and bounded `Field(ge=1, le=20)`, generating explicit enum options and value constraints in the tool schema exposed to MCP clients.
+- **Storage & Guardrail Boundaries**: Qdrant runs without an API key in local dev; read-only access is architectural (calling search/point query APIs only). Name-based write detection (`test_no_write_tools_registered_on_corpus_mcp`) is a pipeline contract guardrail, not an operating-system or cryptographic security boundary.
+- **End-to-End Client & Subprocess Testing**: Tested over in-memory `anyio` streams and external OS subprocesses via `stdio_client`, verifying that invalid parameters (e.g. `version="17"` and `limit=50`) return clean client-session validation errors (`isError=True`).
 
 
 
