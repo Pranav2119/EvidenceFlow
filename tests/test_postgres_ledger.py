@@ -7,12 +7,14 @@ Tests:
   4. Secrets exclusion verification across all audit tables.
 """
 
+import os
 import uuid
 import pytest
 import psycopg
 from psycopg.errors import RaiseException, InsufficientPrivilege
 from langgraph.checkpoint.postgres import PostgresSaver
 
+from evidenceflow.config import get_settings
 from evidenceflow.graph.workflow import create_evidenceflow_graph, run_pipeline
 from evidenceflow.graph.audit_wrapper import audit_node_wrapper
 from evidenceflow.state import EvidenceFlowState
@@ -28,15 +30,31 @@ from evidenceflow.storage.ledger import (
     fetch_steps,
     fetch_claims,
 )
-from evidenceflow.storage.migrate_postgres import run_migrations, drop_all_tables
+from evidenceflow.storage.migrate_postgres import run_migrations, drop_all_tables, ensure_database_exists
+
+TEST_DB = "evidenceflow_test"
 
 
 @pytest.fixture(scope="module", autouse=True)
 def setup_database_schema():
-    """Ensures migrations and checkpointer tables are initialized before tests run."""
-    run_migrations()
+    """
+    Configures an isolated test database (evidenceflow_test) for the test suite,
+    ensuring dev database (evidenceflow_db) is never modified or dropped by tests.
+    """
+    ensure_database_exists(TEST_DB)
+    old_db = os.environ.get("POSTGRES_DB")
+    os.environ["POSTGRES_DB"] = TEST_DB
+    get_settings.cache_clear()
+    close_connection_pool()
+
+    run_migrations(dbname=TEST_DB)
     yield
     close_connection_pool()
+    if old_db is not None:
+        os.environ["POSTGRES_DB"] = old_db
+    else:
+        os.environ.pop("POSTGRES_DB", None)
+    get_settings.cache_clear()
 
 
 # --- 1. Test Append-Only Immutability Triggers and RBAC Role Isolation ---
@@ -453,24 +471,31 @@ def test_fresh_database_setup_and_limited_role_lifecycle():
     """
     Day 5 Review Item 4: Confirm checkpointer.setup() runs only in the owner-role migration step,
     not at app startup, and verify a fresh database can be set up and then used by the limited role.
+    Also verifies drop_all_tables() strictly refuses to run on non-test databases.
     """
-    # 1. Reset all tables using owner role
-    close_connection_pool()
-    drop_all_tables()
+    # 1. Verify safety guard: drop_all_tables() must REFUSE to run on non-test database
+    with pytest.raises(RuntimeError) as exc_info:
+        drop_all_tables(dbname="evidenceflow_db")
+    assert "Safety Violation" in str(exc_info.value)
+    assert "evidenceflow_db" in str(exc_info.value)
 
-    # 2. Re-run migrations under owner role (runs checkpointer.setup() and migrations 001, 002, 003)
-    applied = run_migrations()
+    # 2. Reset test database tables using owner role
+    close_connection_pool()
+    drop_all_tables(dbname=TEST_DB)
+
+    # 3. Re-run migrations under owner role on TEST_DB (runs checkpointer.setup() and migrations 001, 002, 003)
+    applied = run_migrations(dbname=TEST_DB)
     assert "langgraph_checkpointer_setup" in applied
     assert "003_app_role.sql" in applied
 
-    # 3. Confirm limited app role cannot perform DDL (table creation fails with InsufficientPrivilege)
-    conn_str_app = get_postgres_connection_string(use_app_role=True)
+    # 4. Confirm limited app role cannot perform DDL (table creation fails with InsufficientPrivilege)
+    conn_str_app = get_postgres_connection_string(use_app_role=True, dbname=TEST_DB)
     with psycopg.connect(conn_str_app, autocommit=True) as conn_app:
         with pytest.raises(InsufficientPrivilege):
             with conn_app.cursor() as cur:
                 cur.execute("CREATE TABLE malicious_table (id INT);")
 
-    # 4. App runtime operates normally using limited app role
+    # 5. App runtime operates normally using limited app role on TEST_DB
     thread_lifecycle = f"lifecycle-thread-{uuid.uuid4().hex[:6]}"
     state = run_pipeline(
         query="What is the default value of autovacuum_work_mem in PostgreSQL 16?",
@@ -480,7 +505,7 @@ def test_fresh_database_setup_and_limited_role_lifecycle():
     )
     assert not state.is_abstained
 
-    # 5. Verify records persisted under limited role
+    # 6. Verify records persisted under limited role in TEST_DB
     turns = fetch_turns(thread_lifecycle)
     assert len(turns) == 1
     assert "autovacuum_work_mem" in turns[0]["query"]
@@ -526,3 +551,19 @@ def test_step_number_is_thread_wide_counter():
     all_step_numbers = [s["step_number"] for s in steps_all]
     # Verify strict monotonic sequence 1, 2, 3, ... N with no gaps or resets
     assert all_step_numbers == list(range(1, len(steps_all) + 1))
+
+
+# --- 9. Test Production Mode Refuses Placeholder Passwords ---
+
+def test_production_environment_refuses_placeholder_passwords():
+    """
+    Day 5 Review: In production, Settings must refuse to start if placeholder passwords are used.
+    """
+    from evidenceflow.config import Settings
+    with pytest.raises(ValueError) as exc_info:
+        Settings(
+            APP_ENV="production",
+            POSTGRES_PASSWORD="evidenceflow_dev_secret",
+        )
+    assert "Security Violation" in str(exc_info.value)
+    assert "POSTGRES_PASSWORD" in str(exc_info.value)

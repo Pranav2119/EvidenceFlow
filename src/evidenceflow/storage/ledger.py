@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 _pool_instance: Optional[ConnectionPool] = None
 
 
-def get_postgres_connection_string(use_app_role: bool = True) -> str:
+def get_postgres_connection_string(use_app_role: bool = True, dbname: Optional[str] = None) -> str:
     """
     Builds standard psycopg connection string from Pydantic settings.
     When use_app_role is True, uses the limited runtime app role (evidenceflow_app)
@@ -30,14 +30,15 @@ def get_postgres_connection_string(use_app_role: bool = True) -> str:
     s = get_settings()
     user = s.POSTGRES_APP_USER if use_app_role else s.POSTGRES_USER
     pwd = s.POSTGRES_APP_PASSWORD if use_app_role else s.POSTGRES_PASSWORD
-    return f"host={s.POSTGRES_HOST} port={s.POSTGRES_PORT} user={user} password={pwd} dbname={s.POSTGRES_DB}"
+    db = dbname or s.POSTGRES_DB
+    return f"host={s.POSTGRES_HOST} port={s.POSTGRES_PORT} user={user} password={pwd} dbname={db}"
 
 
-def get_connection_pool(use_app_role: bool = True) -> ConnectionPool:
+def get_connection_pool(use_app_role: bool = True, dbname: Optional[str] = None) -> ConnectionPool:
     """Returns the process-level shared ConnectionPool singleton."""
     global _pool_instance
     if _pool_instance is None or _pool_instance.closed:
-        conn_str = get_postgres_connection_string(use_app_role=use_app_role)
+        conn_str = get_postgres_connection_string(use_app_role=use_app_role, dbname=dbname)
         try:
             _pool_instance = ConnectionPool(
                 conninfo=conn_str,
@@ -49,7 +50,7 @@ def get_connection_pool(use_app_role: bool = True) -> ConnectionPool:
         except Exception as e:
             if use_app_role:
                 logger.warning("Failed to connect using limited app role (%s), falling back to owner role.", e)
-                conn_str = get_postgres_connection_string(use_app_role=False)
+                conn_str = get_postgres_connection_string(use_app_role=False, dbname=dbname)
                 _pool_instance = ConnectionPool(
                     conninfo=conn_str,
                     min_size=1,

@@ -78,6 +78,9 @@ NEO4J_USER=neo4j
 NEO4J_PASSWORD=evidenceflow_graph_secret
 ```
 
+> [!WARNING] Production Password Security & Refusal Guard
+> The `*_secret` passwords (`evidenceflow_dev_secret`, `evidenceflow_app_secret`, `evidenceflow_graph_secret`) shown above are **local-dev placeholders only**. When `APP_ENV=production` (or `ENV=production`), the application strictly refuses to start if any of these placeholder passwords remain configured in `.env` or system environment variables.
+
 ### 3. Start Database Services via Docker Compose
 EvidenceFlow includes pre-configured services with persistent volumes and healthchecks in `docker-compose.yml`:
 ```powershell

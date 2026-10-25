@@ -117,6 +117,20 @@ When a user asks a follow-up question that relies on implicit context from an ea
 
 ---
 
+## 6. Thread-Wide Step Counter Concurrency Race Condition
+
+### Symptom & Concurrency Boundary
+The sequential step counter in `step_ledger` is computed via `SELECT COALESCE(MAX(step_number), 0) + 1 FROM step_ledger WHERE thread_id = %s`:
+- **Current Behavior**:
+  - For sequential turns and multi-node DAG transitions within a single thread, step numbers advance strictly and monotonically (e.g. Turn 1: 1–5, Turn 2: 6–10).
+  - However, if multiple concurrent requests are submitted simultaneously against the *exact same* `thread_id` across parallel workers, a race condition exists where two workers may read the identical `MAX(step_number)` before committing their respective step records.
+- **Architectural Mitigation Plan (Tier 2)**:
+  - In Tier 2 multi-tenant high-throughput concurrency environments:
+    1. Acquire an exclusive row lock on the parent thread record (`SELECT 1 FROM threads WHERE thread_id = %s FOR UPDATE;`) prior to step insertion, or
+    2. Provision an atomic PostgreSQL sequence or CTE with transaction-level locking per thread session to eliminate race windows entirely.
+
+---
+
 ## Summary Matrix
 
 | Limitation | Severity | Trigger Condition | Current Safeguard | Planned Architectural Fix |
@@ -126,3 +140,4 @@ When a user asks a follow-up question that relies on implicit context from an ea
 | **Release Note Bleed (`h14`)** | Low / Label Discrepancy | Inquiring about a removed or deprecated setting | Model cites release note | `doc_type` metadata partitioning (`configuration` vs `release_notes`) |
 | **Section Num as Value (`g11`)** | Medium / Fallback Only | Deterministic fallback synthesizes sentence containing section number | Fail-closed verifier | Strip section/chapter numbers from candidate claim value extraction |
 | **Multi-Turn Entity Resolution** | Deferred / Tier 2 | Follow-up questions with implicit entities (*"what about v15?"*) | Checkpointer recovers state; query requires explicit parameter | Tier 2 Neo4j conversational graph memory & query rewriting |
+| **Concurrent Step Counter Race** | Low / Sequential by Design | Simultaneous parallel calls on the exact same `thread_id` | Monotonic `MAX(step_number) + 1` query | Row-level locking (`FOR UPDATE`) or atomic PostgreSQL sequence |

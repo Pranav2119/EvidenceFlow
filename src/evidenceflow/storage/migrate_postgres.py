@@ -16,22 +16,37 @@ from evidenceflow.config import get_settings
 logger = logging.getLogger(__name__)
 
 
-def get_postgres_connection_string() -> str:
+def get_postgres_connection_string(dbname: Optional[str] = None) -> str:
     """Builds standard psycopg connection string from Pydantic settings."""
     s = get_settings()
-    return f"host={s.POSTGRES_HOST} port={s.POSTGRES_PORT} user={s.POSTGRES_USER} password={s.POSTGRES_PASSWORD} dbname={s.POSTGRES_DB}"
+    db = dbname or s.POSTGRES_DB
+    return f"host={s.POSTGRES_HOST} port={s.POSTGRES_PORT} user={s.POSTGRES_USER} password={s.POSTGRES_PASSWORD} dbname={db}"
 
 
-def run_migrations(migrations_dir: Optional[Path] = None) -> List[str]:
+def ensure_database_exists(dbname: str):
+    """Creates the target PostgreSQL database if it does not already exist."""
+    s = get_settings()
+    admin_conn_str = f"host={s.POSTGRES_HOST} port={s.POSTGRES_PORT} user={s.POSTGRES_USER} password={s.POSTGRES_PASSWORD} dbname=postgres"
+    with psycopg.connect(admin_conn_str, autocommit=True) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM pg_database WHERE datname = %s;", (dbname,))
+            if not cur.fetchone():
+                logger.info("Creating target database '%s'...", dbname)
+                cur.execute(f'CREATE DATABASE "{dbname}";')
+
+
+def run_migrations(migrations_dir: Optional[Path] = None, dbname: Optional[str] = None) -> List[str]:
     """
     Executes LangGraph checkpointer setup and all sequential SQL migrations.
     Returns list of executed migration filenames.
     """
-    conn_str = get_postgres_connection_string()
+    s = get_settings()
+    target_db = dbname or s.POSTGRES_DB
+    conn_str = get_postgres_connection_string(dbname=target_db)
     applied = []
 
     # 1. Setup LangGraph PostgresSaver checkpointer tables (requires autocommit=True)
-    logger.info("Initializing LangGraph checkpointer schema...")
+    logger.info("Initializing LangGraph checkpointer schema on database '%s'...", target_db)
     with psycopg.connect(conn_str, autocommit=True) as conn:
         checkpointer = PostgresSaver(conn)
         checkpointer.setup()
@@ -49,18 +64,29 @@ def run_migrations(migrations_dir: Optional[Path] = None) -> List[str]:
     with psycopg.connect(conn_str, autocommit=True) as conn:
         with conn.cursor() as cur:
             for sql_file in sql_files:
-                logger.info("Applying migration: %s", sql_file.name)
+                logger.info("Applying migration: %s on database '%s'", sql_file.name, target_db)
                 sql_content = sql_file.read_text(encoding="utf-8")
                 cur.execute(sql_content)
                 applied.append(sql_file.name)
 
-    logger.info("All migrations applied successfully! Total: %d", len(applied))
+    logger.info("All migrations applied successfully on '%s'! Total: %d", target_db, len(applied))
     return applied
 
 
-def drop_all_tables():
-    """Drops custom audit tables and checkpointer tables (for clean test isolation)."""
-    conn_str = get_postgres_connection_string()
+def drop_all_tables(dbname: Optional[str] = None):
+    """
+    Drops custom audit tables and checkpointer tables (for clean test isolation).
+    Strictly refuses to run unless the target database name ends with '_test'.
+    """
+    s = get_settings()
+    target_db = dbname or s.POSTGRES_DB
+    if not target_db.endswith("_test"):
+        raise RuntimeError(
+            f"Safety Violation: drop_all_tables() is only permitted on test databases ending in '_test'. "
+            f"Attempted execution on database '{target_db}'."
+        )
+
+    conn_str = get_postgres_connection_string(dbname=target_db)
     with psycopg.connect(conn_str, autocommit=True) as conn:
         with conn.cursor() as cur:
             # Drop custom tables
@@ -78,21 +104,22 @@ def drop_all_tables():
                 DROP TABLE IF EXISTS checkpoints CASCADE;
                 DROP TABLE IF EXISTS checkpoint_migrations CASCADE;
             """)
-    logger.info("All EvidenceFlow PostgreSQL tables dropped.")
+    logger.info("All EvidenceFlow PostgreSQL tables dropped on test database '%s'.", target_db)
 
 
 def main():
     parser = argparse.ArgumentParser(description="Run EvidenceFlow PostgreSQL migrations.")
-    parser.add_argument("--drop", action="store_true", help="Drop all tables before running migrations")
+    parser.add_argument("--dbname", type=str, default=None, help="Target PostgreSQL database name")
+    parser.add_argument("--drop", action="store_true", help="Drop all tables before running migrations (requires database ending in '_test')")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
     if args.drop:
-        logger.warning("Dropping all existing tables...")
-        drop_all_tables()
+        logger.warning("Dropping tables on target database...")
+        drop_all_tables(dbname=args.dbname)
 
-    run_migrations()
+    run_migrations(dbname=args.dbname)
 
 
 if __name__ == "__main__":
