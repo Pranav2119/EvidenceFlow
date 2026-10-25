@@ -82,6 +82,28 @@ Single-namespace ingestion: `runtime-config` (current configuration state) and `
 
 ---
 
+## 4. Fallback Mode Section Number Extraction as Value (`g11`)
+
+### Symptom & Empirical Trace
+In zero-LLM deterministic fallback mode, the verifier may treat structural documentation metadata (such as chapter or section numbers) as a claimed configuration value, causing a false-positive rejection.
+- **Example (`g11`)**: *"What is autovacuum_naptime in Postgres 16?"*
+- **Observed Behavior**:
+  - When the Gemini API quota is exhausted, the offline fallback synthesizes:
+    *"According to PostgreSQL 16 documentation on Section 20.4: Specifies the minimum delay between autovacuum runs on any given database..."*
+  - The verifier detects the attribute word `"minimum"`.
+  - The numeric value extractor captures the numeral `"20"` from the section prefix (`Section 20.4`) and attempts to bind it to the parameter's minimum allowed value.
+  - Verification fails closed with code `VALUE_MISMATCH`:
+    `L1.5/L2 Value Verification Failed: Value '20' appears in passage, but does not match claimed attribute 'minimum'. in source passage 'pg16-runtime-config-autovacuum-autovacuum-naptime'.`
+
+### Root Cause
+The fallback text template prefixes the answer with the documentation section name/number, and the regex value extraction passes all integers in the sentence into attribute binding without filtering out section/chapter metadata numerals.
+
+### Architectural Mitigation Plan
+- Strip `Section X.Y` or `Chapter X` prefixes before extracting candidate values in `verifier.py`.
+- Ensure deterministic fallback templates omit numeric section identifiers from synthesized sentences or format them cleanly outside the factual claim boundary.
+
+---
+
 ## Summary Matrix
 
 | Limitation | Severity | Trigger Condition | Current Safeguard | Planned Architectural Fix |
@@ -89,3 +111,4 @@ Single-namespace ingestion: `runtime-config` (current configuration state) and `
 | **Fake Features (`h19`)** | High | Real setting paired with non-existent technical modifier | LLM abstention declaration | Corpus-wide vocabulary check; reject non-existent content tokens |
 | **Thin Retrieval Margin (`h10`)** | Medium | Paraphrased question without setting name | Dense + BM25 RRF fusion (rank #4) | Adaptive `RETRIEVAL_LIMIT` (expand to 8-10 for descriptive queries) |
 | **Release Note Bleed (`h14`)** | Low / Label Discrepancy | Inquiring about a removed or deprecated setting | Model cites release note | `doc_type` metadata partitioning (`configuration` vs `release_notes`) |
+| **Section Num as Value (`g11`)** | Medium / Fallback Only | Deterministic fallback synthesizes sentence containing section number | Fail-closed verifier | Strip section/chapter numbers from candidate claim value extraction |
