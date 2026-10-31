@@ -81,6 +81,7 @@ This document tracks all empirical evaluation runs, benchmark datasets, ablation
 | Evaluation Metric | Gemini ON (Live LLM) | Gemini OFF (Deterministic Fallback) | Target Threshold | Metric Description |
 | :--- | :---: | :---: | :---: | :--- |
 | **Overall Accuracy** | **35 / 40 (87.5%)** | **37 / 40 (92.5%)** | $\ge 85.0\%$ | End-to-end task completion |
+| **End-to-End Correct** | **21 / 26 (80.8%)** | **3 / 26 (11.5%)** | $\ge 80.0\%$ | Answered + expected value + right chunk cited |
 | **Wrong Answers (FN, $\beta$-error)** | **0 / 14 (0.0%)** | **0 / 14 (0.0%)** | **Strictly 0.0%** | Injections / hallucinations leaked (Dangerous) |
 | **Wrong Refusals (FP, $\alpha$-error)** | **5 / 26 (19.2%)** | **3 / 26 (11.5%)** | $\le 20.0\%$ | Legitimate technical queries blocked (Annoying) |
 | **Retrieval Recall@5** | **100.0%** | **100.0%** | $\ge 88.0\%$ | Top-5 ground-truth chunk presence (Answerable only) |
@@ -97,6 +98,7 @@ This document tracks all empirical evaluation runs, benchmark datasets, ablation
 ### 3b. Empirical Results: Baseline v1.1 Post-Tier 2 Improvements (Dev Split, 40 Questions)
 - **Evaluation Type**: Re-run of the Day 7 Dev benchmark after Part B improvements (verifier precision, offline substantive sentence extraction, isolated pure Gemini API latency measurement).
 - **Day 7 Frozen Test Split Status**: **NEVER RUN**. The frozen test split (`benchmark_test_frozen_20.json`, SHA-256: `f684b07ab93d12bb65093609fb91272d82f632576c36545017f9f3747fe9415d`) remains 100% untouched and unexecuted.
+- **Generalization Disclaimer**: Baseline v1.1 gains were measured on dev sets the agent had seen, so they are not generalization evidence. The Day 7 frozen test stays unrun until explicitly directed.
 - **Raw Result Artifacts**:
   - `data/benchmarks/dev_baseline_v1_1_no_gemini.json` (Gemini OFF, 3 repeats, delay 0.0s)
   - `data/benchmarks/dev_baseline_v1_1_gemini_on.json` (Gemini ON, 3 repeats, delay 2.0s)
@@ -104,6 +106,7 @@ This document tracks all empirical evaluation runs, benchmark datasets, ablation
 | Evaluation Metric | Baseline v1.0 (Gemini ON) | Baseline v1.1 (Gemini ON) | Baseline v1.0 (Gemini OFF) | Baseline v1.1 (Gemini OFF) | Target Threshold | Metric Description |
 | :--- | :---: | :---: | :---: | :---: | :---: | :--- |
 | **Overall Accuracy** | 35 / 40 (87.5%) | **36 / 40 (90.0%)** | 37 / 40 (92.5%) | **38 / 40 (95.0%)** | $\ge 85.0\%$ | End-to-end task completion |
+| **End-to-End Correct** | 21 / 26 (80.8%) | **22 / 26 (84.6%)** | 3 / 26 (11.5%) | **22 / 26 (84.6%)** | $\ge 80.0\%$ | Answered + expected value + right chunk cited |
 | **Wrong Answers (FN, $eta$-error)** | 0 / 14 (0.0%) | **0 / 14 (0.0%)** | 0 / 14 (0.0%) | **0 / 14 (0.0%)** | **Strictly 0.0%** | Injections / hallucinations leaked (Dangerous) |
 | **Wrong Refusals (FP, $lpha$-error)** | 5 / 26 (19.2%) | **4 / 26 (15.4%)** | 3 / 26 (11.5%) | **2 / 26 (7.7%)** | $\le 20.0\%$ | Legitimate technical queries blocked (Annoying) |
 | **Retrieval Recall@5** | 100.0% | **100.0%** | 100.0% | **100.0%** | $\ge 88.0\%$ | Top-5 ground-truth chunk presence (Answerable only) |
