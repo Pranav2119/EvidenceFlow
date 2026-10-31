@@ -212,7 +212,7 @@ def test_memory_only_rewrites_query_downstream_cites_corpus_chunks():
     )
 
     # Turn 2: Follow-up query
-    follow_up = "Did that change in v16?"
+    follow_up = "How is that configured in v16?"
     res = resolve_entity_for_turn(thread_id, follow_up)
     assert res["status"] == "resolved"
     rewritten_query = res["rewritten_query"]

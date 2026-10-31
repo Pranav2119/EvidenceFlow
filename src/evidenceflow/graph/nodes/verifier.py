@@ -84,36 +84,71 @@ def get_equivalent_quantities(val: str) -> Set[str]:
 def extract_claimed_values(statement: str) -> List[str]:
     """
     Extracts numeric quantities and configuration enum values from a claim statement.
-    Excludes bare single-digit numbers (to avoid false triggers on versions like '9.6' or '14.4.7').
+    Does NOT extract everyday words ('true', 'yes', 'off' in prose) as claimed values.
+    Only extracts boolean/state values when tied to a parameter name or 'default is' patterns [Rule f, j].
     """
-    # 1. Numeric quantities with units (e.g. '128MB', '1min', '60s', '8kB') OR multi-digit integers ('100', '200', '400')
-    raw_quantities = re.findall(
-        r"\b\d+(?:\.\d+)?\s*(?:ms|min|kB|MB|GB|TB|pages|bytes|rows|s|h|d)\b|\b\d{2,}\b",
+    stmt_lower = statement.lower()
+    filtered = []
+
+    # 1. Numeric quantities with units, negative numbers (-1), decimals (4.0MB), or multi-digit integers
+    raw_nums = re.findall(
+        r"(?<![a-z0-9_])-?\d+(?:\.\d+)?\s*(?:ms|min|kB|MB|GB|TB|pages|bytes|rows|s|h|d)?\b",
         statement,
         re.IGNORECASE,
     )
-    # Filter out common PostgreSQL versions
-    filtered = [
-        q.strip().lower()
-        for q in raw_quantities
-        if q.strip() not in {"14", "15", "16"}
-    ]
+    for n in raw_nums:
+        n_clean = n.strip().lower()
+        if n_clean in {"14", "15", "16", "14.", "15.", "16."}:
+            continue
+        has_unit = any(n_clean.endswith(u) for u in ["ms", "min", "kb", "mb", "gb", "tb", "pages", "bytes", "rows", "s", "h", "d"])
+        is_negative = n_clean.startswith("-") and len(n_clean) > 1
+        has_decimal = "." in n_clean
+        is_multi_digit = re.fullmatch(r"\d{2,}", n_clean) is not None
+        if has_unit or is_negative or has_decimal or is_multi_digit:
+            filtered.append(n_clean)
 
     # 2. Domain enum values (e.g., 'replica', 'logical', 'minimal')
-    stmt_lower = statement.lower()
     for enum_val in RECOGNIZED_ENUM_VALUES:
         if re.search(r"\b" + re.escape(enum_val) + r"\b", stmt_lower):
             filtered.append(enum_val)
 
-    # 3. Explicit boolean / state assertions (e.g. 'is on', 'defaults to off', '= on')
+    # 3. Explicit boolean / state assertions ONLY when tied to default or parameter pattern [Rule f, j]
     bool_states = re.findall(
-        r"\b(?:is|to|set\s+to|defaults?\s+to|=)\s+(on|off|true|false)\b",
+        r"\b(?:defaults?\s+(?:value\s+)?(?:is|to|=|\:)|defaults?\s+to|\b[a-z][a-z0-9]*_[a-z0-9_]+\s+(?:is|set\s+to|=|defaults?\s+to))\s+(on|off|true|false)\b",
         stmt_lower,
     )
     for bs in bool_states:
         filtered.append(bs.lower())
 
     return list(dict.fromkeys(filtered))
+
+
+def split_sentences_safely(text: str) -> List[Tuple[str, int]]:
+    """
+    Splits passage text into grammatical sentences preserving:
+      - Floating point decimals (e.g. 4.0, 0.2, 1.5)
+      - Negative numbers (-1, -100)
+      - Common technical abbreviations (e.g., i.e., etc., vs.)
+      - Paragraph boundaries
+    Returns list of (sentence_text, start_char_index)
+    """
+    p_normalized = re.sub(r"(?<!\n)\n(?!\n)", " ", text)
+    split_pattern = re.compile(
+        r"(?:\n\s*\n+|(?<!\d)(?<!\be\.g)(?<!\bi\.e)(?<!\betc)(?<!\bvs)(?<!\bp)\.(?!\d)(?=\s+[A-Z0-9\-\"'\(\[]|\s*$)|[!?:;]+(?=\s+[A-Z0-9\-\"'\(\[]|\s*$))",
+        re.IGNORECASE,
+    )
+    sentences = []
+    last_end = 0
+    for m in split_pattern.finditer(p_normalized):
+        end = m.end()
+        stmt = p_normalized[last_end:end].strip()
+        if stmt:
+            sentences.append((stmt, last_end))
+        last_end = end
+    tail = p_normalized[last_end:].strip()
+    if tail:
+        sentences.append((tail, last_end))
+    return sentences
 
 
 def split_answer_into_citation_statements(draft_answer: str) -> List[Tuple[str, List[str]]]:
@@ -241,16 +276,10 @@ def verify_statement_value_presence(
     for m in re.finditer(r"\b[a-z][a-z0-9]*_[a-z0-9_]+\b", passage_content.lower()):
         chunk_params.append((m.start(), m.group(0)))
 
-    # Split into sentences preserving paragraph structure and single-line wraps
-    p_normalized_breaks = re.sub(r"(?<!\n)\n(?!\n)", " ", passage_content)
-    raw_sentences = []
-    sentence_positions = []
-    for m in re.finditer(r"[^.\n!?]+(?:\.|\n{2,}|!|\?|$)", p_normalized_breaks):
-        s = m.group(0).strip()
-        if s:
-            raw_sentences.append(s)
-            sentence_positions.append(m.start())
-
+    # Split into sentences preserving paragraph structure, decimals, and abbreviations [Rule j]
+    sentence_tuples = split_sentences_safely(passage_content)
+    raw_sentences = [s for s, _ in sentence_tuples]
+    sentence_positions = [pos for _, pos in sentence_tuples]
     norm_sentences = [normalize_text(s) for s in raw_sentences]
 
     missing_values = []
@@ -262,7 +291,7 @@ def verify_statement_value_presence(
         matching_sentences = []
         for raw_s, norm_s, pos in zip(raw_sentences, norm_sentences, sentence_positions):
             has_val = any(
-                re.search(r"\b" + re.escape(c) + r"\b", norm_s) or c in norm_s
+                re.search(r"(?<!\w)" + re.escape(c) + r"\b", norm_s) or c in norm_s
                 for c in norm_candidates
             )
             if has_val:

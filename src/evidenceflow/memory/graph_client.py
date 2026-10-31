@@ -368,6 +368,8 @@ def safe_substitute_pronoun(query: str, entity_name: str, target_version: Option
         return None
 
     # If rewritten query lacks PostgreSQL version mention and target_version is known, append cleanly
+    # Normalize short version tokens like v16 -> PostgreSQL 16
+    new_q = re.sub(r"\bv(14|15|16)\b", r"PostgreSQL \1", new_q, flags=re.IGNORECASE)
     if target_version and not re.search(r"\b(?:v|version\s+|postgresql\s+)?(?:14|15|16)\b", new_q, re.IGNORECASE):
         if new_q.endswith("?"):
             new_q = f"{new_q[:-1]} in PostgreSQL {target_version}?"
@@ -474,7 +476,7 @@ def resolve_entity_for_turn(
         return {
             "status": "ambiguous",
             "reason": "prior_turn_refusal",
-            "clarification": f"The previous question was refused ({record.get('abstention_code')}). Which parameter would you like to investigate?",
+            "clarification": f"The previous question could not be answered from the documentation (refused: {record.get('abstention_code')}). Which parameter would you like to investigate?",
             "latency_ms": round(latency_ms, 3),
         }
 
