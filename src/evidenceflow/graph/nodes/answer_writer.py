@@ -46,7 +46,9 @@ def build_grounded_prompt(query: str, version: str, passages: List[Dict[str, Any
         f"1. Every factual statement must cite its source chunk ID using Markdown footnote format: [^chunk_id].\n"
         f"   Example: 'The default value of vacuum_cost_limit is 200 [^pg16-runtime-config-resource-vacuum-cost-limit].'\n"
         f"2. Do NOT invent, assume, or extrapolate any values, units, or parameter settings.\n"
-        f"3. If the provided passages do not contain the answer, respond: 'Insufficient evidence in the documentation.'\n\n"
+        f"3. If the provided passages do not contain the answer, respond: 'Insufficient evidence in the documentation.'\n"
+        f"4. For comparative questions across versions (e.g. 'Is it the same in 16?', 'Did it change?'):\n"
+        f"   Answer with the documented value for the target version and cite its passage chunk. If an earlier version's passage is present, compare them; otherwise state the target version's value directly and note that the earlier version cannot be confirmed from the retrieved text. Do NOT abstain when the target version's passage contains the answer.\n\n"
         f"USER QUESTION: {query}\n"
         f"POSTGRESQL VERSION SCOPE: {version}\n\n"
         f"DOCUMENTATION PASSAGES:\n{context}\n\n"
@@ -218,7 +220,11 @@ def deterministic_fallback_answer(
         return FallbackAnswer(f"Insufficient evidence in the PostgreSQL {version} documentation.", "NO_SUBSTANTIVE_EVIDENCE")
 
     summary = best_sent
-    return FallbackAnswer(f"According to PostgreSQL {version} documentation on {section}: {summary} [^{cid}]", None)
+    setting_label = named_settings[0] if named_settings else "the parameter"
+    return FallbackAnswer(
+        f"In PostgreSQL {version}, {setting_label} is documented under {section}.\n\n{summary} [^{cid}]",
+        None,
+    )
 
 
 def extract_citations(answer: str, passages: List[Dict[str, Any]]) -> List[Citation]:

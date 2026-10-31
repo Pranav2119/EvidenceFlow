@@ -65,6 +65,7 @@ def memory_resolver_node(state: EvidenceFlowState) -> Dict[str, Any]:
         return {
             "query": resolution["rewritten_query"],
             "target_version": resolution["target_version"],
+            "prior_version": resolution.get("prior_version"),
         }
 
     elif resolution["status"] == "ambiguous":

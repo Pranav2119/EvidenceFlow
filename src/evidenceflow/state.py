@@ -23,6 +23,7 @@ class EvidenceFlowState(BaseModel):
     # --- Input & Scope ---
     query: str = Field(description="The user's original technical question")
     target_version: Optional[str] = Field(default=None, description="Explicit or inferred PostgreSQL version scope (e.g. '14', '15', '16')")
+    prior_version: Optional[str] = Field(default=None, description="Prior turn version scope for cross-version comparisons")
     thread_id: str = Field(default="default_thread", description="Conversation thread identifier for checkpointer")
     turn_id: Optional[str] = Field(default=None, description="Unique UUID for current conversation turn")
     turn_number: int = Field(default=1, description="Sequential turn index within thread")
