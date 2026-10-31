@@ -58,8 +58,8 @@ This document tracks all empirical evaluation runs, benchmark datasets, ablation
 ## Milestone 5: Day 7 Benchmark v1 & Baseline Measurements (Tier 1 Certified)
 
 ### 1. Dataset Partition & Integrity Verification
-- **Dev Split (40 Questions)**: `data/benchmarks/benchmark_dev_40.json` (26 answerable queries spanning Resource, WAL, Memory, Connections, Logging, Autovacuum; 14 should-refuse queries covering Prompt Injections, Hallucinated Settings, Unsupported Versions, and Out-of-Domain topics).
-- **Frozen Test Split (20 Questions)**: `data/benchmarks/benchmark_test_frozen_20.json` (13 answerable queries spanning Query Planner, Timeouts, Client formatting, Background Writer; 7 should-refuse queries).
+- **Dev Split (40 Questions, Agent-drafted)**: `data/benchmarks/benchmark_dev_40.json` (26 answerable queries spanning Resource, WAL, Memory, Connections, Logging, Autovacuum; 14 should-refuse queries covering Prompt Injections, Hallucinated Settings, Unsupported Versions, and Out-of-Domain topics; drafted by AI assistant).
+- **Frozen Test Split (20 Questions, Agent-drafted)**: `data/benchmarks/benchmark_test_frozen_20.json` (13 answerable queries spanning Query Planner, Timeouts, Client formatting, Background Writer; 7 should-refuse queries; drafted by AI assistant, frozen before baseline run).
 - **Entity Partitioning**: Zero parameter overlap between Dev and Test splits.
 - **Frozen Test File SHA-256**: `f684b07ab93d12bb65093609fb91272d82f632576c36545017f9f3747fe9415d`
 - **Protocol**: Test split is frozen, committed, and touched strictly once for final release reporting; zero prompt tuning or threshold calibration is performed against it.
@@ -104,7 +104,7 @@ This document tracks all empirical evaluation runs, benchmark datasets, ablation
 3. **The Core Tier 2 Hypothesis**:
    - When we introduce the 5-layer scoped cache in Tier 2, cache hits will deliver **Gemini ON quality (96.2% value accuracy, full explanations)** at **Gemini OFF latency (< 3 ms, 0 token cost)**.
 4. **False Refusal Taxonomy (Gemini ON, 5 cases)**:
-   - `d10` (`max_wal_size` in v15): Model cited `1GB`, but setting proximity window failed due to multi-paragraph discussion of checkpoint frequency.
+   - `d10` (`max_wal_size` in v15): Model cited `1GB`, but same-sentence proximity verifier failed because the setting and claimed attribute were separated across paragraphs.
    - `d21` (`autovacuum_naptime` in v16): Model phrased default as "1 minute (the default)", but setting was separated from unit mapping by explanatory text.
    - `d22` (`archive_mode` in v16): L2 verifier flagged missing boolean toggle in tight proximity window.
    - `d23` (`vacuum_buffer_usage_limit` in v16): Transient network retry fallback triggered fallback abstention.
