@@ -321,19 +321,22 @@ def verify_statement_value_presence(
         else:
             target_p = None
 
-        # In multi-setting chunks: ensure value belongs to the claimed setting
-        if target_p and chunk_params and len(set(p for _, p in chunk_params)) > 1:
-            setting_matched = any(
-                active_p == target_p or (primary_chunk_setting and active_p == primary_chunk_setting)
-                for _, _, active_p in matching_sentences
-                if active_p
-            )
-            if not setting_matched:
-                active_p_found = matching_sentences[0][2] or "another setting"
-                return (
-                    [val],
-                    f"Value '{val}' appears in passage, but belongs to setting '{active_p_found}', not '{target_p}'.",
+        # In multi-setting chunks: ensure value belongs to the claimed setting.
+        # Single-setting chunks (where target_p is the primary chunk setting) do not fail
+        # when other parameters are mentioned in explanatory prose [Rule j].
+        if target_p and not (primary_chunk_setting and target_p == primary_chunk_setting):
+            if chunk_params and len(set(p for _, p in chunk_params)) > 1:
+                setting_matched = any(
+                    active_p == target_p
+                    for _, _, active_p in matching_sentences
+                    if active_p
                 )
+                if not setting_matched:
+                    active_p_found = matching_sentences[0][2] or "another setting"
+                    return (
+                        [val],
+                        f"Value '{val}' appears in passage, but belongs to setting '{active_p_found}', not '{target_p}'.",
+                    )
 
         # If statement asserted an attribute (e.g. default / max / min / range),
         # verify that at least one sentence containing the value contains that attribute

@@ -55,9 +55,25 @@ def build_grounded_prompt(query: str, version: str, passages: List[Dict[str, Any
     return prompt
 
 
+class FallbackAnswer(str):
+    """
+    Subclass of str supporting backward compatibility with Day 4 string assertions
+    while allowing Day 8 tuple unpacking (answer_text, abstention_code).
+    """
+    abstention_code: Optional[str]
+
+    def __new__(cls, text: str, abstention_code: Optional[str] = None):
+        obj = super().__new__(cls, text)
+        obj.abstention_code = abstention_code
+        return obj
+
+    def __iter__(self):
+        return iter((str(self), self.abstention_code))
+
+
 def deterministic_fallback_answer(
     query: str, version: str, passages: List[Dict[str, Any]]
-) -> Tuple[str, Optional[str]]:
+) -> FallbackAnswer:
     """
     Zero-LLM deterministic synthesis template.
     Extracts substantive sentences from retrieved chunks answering the user's question.
@@ -65,7 +81,7 @@ def deterministic_fallback_answer(
     abstains with a clear code [Rule i].
     """
     if not passages:
-        return f"Insufficient evidence in the PostgreSQL {version} documentation.", "NO_SUBSTANTIVE_EVIDENCE"
+        return FallbackAnswer(f"Insufficient evidence in the PostgreSQL {version} documentation.", "NO_SUBSTANTIVE_EVIDENCE")
 
     # Identify recognized setting names mentioned in query
     from evidenceflow.memory.corpus_settings import get_corpus_settings
@@ -90,7 +106,7 @@ def deterministic_fallback_answer(
 
     if not named_settings:
         logger.info("Deterministic fallback: question does not name any indexed setting. Failing closed.")
-        return f"Insufficient evidence in the PostgreSQL {version} documentation.", "NO_SUBSTANTIVE_EVIDENCE"
+        return FallbackAnswer(f"Insufficient evidence in the PostgreSQL {version} documentation.", "NO_SUBSTANTIVE_EVIDENCE")
 
     # Find the best passage that contains one of the named settings
     best_passage = None
@@ -115,7 +131,7 @@ def deterministic_fallback_answer(
 
     if not best_passage:
         logger.info("Deterministic fallback: named settings do not appear in retrieved chunks. Failing closed.")
-        return f"Insufficient evidence in the PostgreSQL {version} documentation.", "NO_SUBSTANTIVE_EVIDENCE"
+        return FallbackAnswer(f"Insufficient evidence in the PostgreSQL {version} documentation.", "NO_SUBSTANTIVE_EVIDENCE")
 
     cid = best_passage["chunk_id"]
     section = best_passage.get("section", "Documentation")
@@ -130,7 +146,7 @@ def deterministic_fallback_answer(
     ).strip()
 
     if not body:
-        return f"Insufficient evidence in the PostgreSQL {version} documentation.", "NO_SUBSTANTIVE_EVIDENCE"
+        return FallbackAnswer(f"Insufficient evidence in the PostgreSQL {version} documentation.", "NO_SUBSTANTIVE_EVIDENCE")
 
     # Split into clean sentences using verifier's safe splitter [Rule i, j]
     from evidenceflow.graph.nodes.verifier import split_sentences_safely
@@ -155,7 +171,7 @@ def deterministic_fallback_answer(
         substantive.append(s)
 
     if not substantive:
-        return f"Insufficient evidence in the PostgreSQL {version} documentation.", "NO_SUBSTANTIVE_EVIDENCE"
+        return FallbackAnswer(f"Insufficient evidence in the PostgreSQL {version} documentation.", "NO_SUBSTANTIVE_EVIDENCE")
 
     q_lower = query.lower()
     is_default_q = bool(re.search(r"\bdefaults?\b", q_lower))
@@ -189,20 +205,20 @@ def deterministic_fallback_answer(
 
     if is_default_q and not any(score >= 20 for score, _, _ in scored):
         # Query specifically asked for default, but chunk has no default statement
-        return f"Insufficient evidence in the PostgreSQL {version} documentation.", "NO_SUBSTANTIVE_EVIDENCE"
+        return FallbackAnswer(f"Insufficient evidence in the PostgreSQL {version} documentation.", "NO_SUBSTANTIVE_EVIDENCE")
 
     if is_remove_q and not any(score >= 20 for score, _, _ in scored):
-        return f"Insufficient evidence in the PostgreSQL {version} documentation.", "NO_SUBSTANTIVE_EVIDENCE"
+        return FallbackAnswer(f"Insufficient evidence in the PostgreSQL {version} documentation.", "NO_SUBSTANTIVE_EVIDENCE")
 
     scored.sort(key=lambda x: (-x[0], x[1]))
     best_score, best_idx, best_sent = scored[0]
 
     # If nothing matched specific intents and it was a specific intent query
     if best_score == 0 and (is_default_q or is_remove_q or is_restart_q):
-        return f"Insufficient evidence in the PostgreSQL {version} documentation.", "NO_SUBSTANTIVE_EVIDENCE"
+        return FallbackAnswer(f"Insufficient evidence in the PostgreSQL {version} documentation.", "NO_SUBSTANTIVE_EVIDENCE")
 
     summary = best_sent
-    return f"According to PostgreSQL {version} documentation on {section}: {summary} [^{cid}]", None
+    return FallbackAnswer(f"According to PostgreSQL {version} documentation on {section}: {summary} [^{cid}]", None)
 
 
 def extract_citations(answer: str, passages: List[Dict[str, Any]]) -> List[Citation]:
