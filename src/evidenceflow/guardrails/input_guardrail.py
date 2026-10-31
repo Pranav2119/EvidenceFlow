@@ -131,6 +131,14 @@ def input_guardrail_node(state: EvidenceFlowState) -> Dict[str, Any]:
 
     is_safe, error_code, fail_reason = evaluate_input_guardrails(query)
 
+    if is_safe and state.target_version and str(state.target_version) not in SUPPORTED_VERSIONS:
+        is_safe = False
+        error_code = "UNSUPPORTED_VERSION"
+        fail_reason = (
+            f"Unsupported Version: PostgreSQL version {state.target_version} is not indexed. "
+            f"EvidenceFlow currently supports versions {', '.join(sorted(SUPPORTED_VERSIONS))}."
+        )
+
     if not is_safe:
         audit_entry = {
             "node": "input_guardrail",

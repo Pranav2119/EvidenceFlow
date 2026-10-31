@@ -69,14 +69,34 @@ EXPLICIT_NON_FOLLOWUP_PATTERNS = [
 
 
 
+SUPPORTED_VERSIONS = {"14", "15", "16"}
+
+
 def extract_explicit_version(query: str) -> Optional[str]:
     """
-    Extracts an explicit PostgreSQL version target from the query ('14', '15', '16').
+    Extracts an explicit PostgreSQL version target from the query.
+    Extracts any major version number mentioned after version/PostgreSQL/Postgres/PG/v,
+    or standalone version switch queries [Item 3].
     """
-    q = query.lower()
-    match = re.search(r"\b(?:postgresql\s+|postgres\s+|v)?(14|15|16)\b", q)
-    if match:
-        return match.group(1)
+    q = query.lower().strip()
+    # 1. Match version after explicit prefix keyword: version, postgresql, postgres, pg, v
+    match_kw = re.search(r"\b(?:postgres(?:ql)?|pg|version|v)\s*(\d{1,2})\b", q)
+    if match_kw:
+        return match_kw.group(1)
+
+    # 2. Match standalone version switch queries: "in 12?", "and 15?", "same in 15?"
+    match_short = re.search(
+        r"^\s*(?:and\s+|also\s+|same\s+|what\s+about\s+|how\s+about\s+)?(?:in\s+)?(?:postgresql\s+|postgres\s+|v)?(\d{1,2})\??\s*$",
+        q,
+    )
+    if match_short:
+        return match_short.group(1)
+
+    # 3. Match general version 14|15|16 if mentioned with 'in'
+    match_in = re.search(r"\bin\s+(1[0-9]|2[0-9])\b", q)
+    if match_in:
+        return match_in.group(1)
+
     return None
 
 
@@ -383,8 +403,12 @@ def safe_substitute_pronoun(query: str, entity_name: str, target_version: Option
 
     # If rewritten query lacks PostgreSQL version mention and target_version is known, append cleanly
     # Normalize short version tokens like v16 -> PostgreSQL 16
-    new_q = re.sub(r"\bv(14|15|16)\b", r"PostgreSQL \1", new_q, flags=re.IGNORECASE)
-    if target_version and not re.search(r"\b(?:v|version\s+|postgresql\s+)?(?:14|15|16)\b", new_q, re.IGNORECASE):
+    new_q = re.sub(r"\bv(\d{1,2})\b", r"PostgreSQL \1", new_q, flags=re.IGNORECASE)
+    if target_version and not re.search(
+        rf"\b(?:v|version\s+|postgresql\s+|postgres\s+|pg\s+)?{re.escape(str(target_version))}\b",
+        new_q,
+        re.IGNORECASE,
+    ):
         if new_q.endswith("?"):
             new_q = f"{new_q[:-1]} in PostgreSQL {target_version}?"
         else:
@@ -547,6 +571,7 @@ def resolve_entity_for_turn(
         "reason": "single_entity_resolved",
         "entity_name": resolved_entity,
         "target_version": target_version,
+        "is_supported_version": target_version in SUPPORTED_VERSIONS,
         "prior_version": record["prior_version"],
         "prior_turn_number": record["turn_number"],
         "prior_is_abstained": record["is_abstained"],
