@@ -87,13 +87,16 @@ def extract_claimed_values(statement: str) -> List[str]:
     Does NOT extract everyday words ('true', 'yes', 'off' in prose) as claimed values.
     Only extracts boolean/state values when tied to a parameter name or 'default is' patterns [Rule f, j].
     """
-    stmt_lower = statement.lower()
+    # Strip citation preamble and section numbers (e.g. '20.10. Autovacuum')
+    stmt_clean = re.sub(r"^According to PostgreSQL \d+ documentation on [^:]+:\s*", "", statement, flags=re.IGNORECASE)
+    stmt_clean = re.sub(r"\b(?:section|chapter)\s+\d+(?:\.\d+)*\b", "", stmt_clean, flags=re.IGNORECASE)
+    stmt_lower = stmt_clean.lower()
     filtered = []
 
     # 1. Numeric quantities with units, negative numbers (-1), decimals (4.0MB), or multi-digit integers
     raw_nums = re.findall(
         r"(?<![a-z0-9_])-?\d+(?:\.\d+)?\s*(?:ms|min|kB|MB|GB|TB|pages|bytes|rows|s|h|d)?\b",
-        statement,
+        stmt_clean,
         re.IGNORECASE,
     )
     for n in raw_nums:
