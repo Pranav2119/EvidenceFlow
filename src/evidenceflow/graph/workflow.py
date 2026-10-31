@@ -237,6 +237,7 @@ def run_pipeline(
                 claims=claims,
                 is_abstained=state.is_abstained,
                 abstention_code=state.abstention_code,
+                abstention_reason=state.abstention_reason,
             )
         except Exception as e:
             logger.error("Failed to record turn to Neo4j conversational memory: %s", e)

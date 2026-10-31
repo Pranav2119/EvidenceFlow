@@ -109,6 +109,7 @@ def record_turn(
     claims: Optional[List[Dict[str, Any]]] = None,
     is_abstained: bool = False,
     abstention_code: Optional[str] = None,
+    abstention_reason: Optional[str] = None,
 ) -> str:
     """
     Persists a conversation turn into Neo4j in a single ACID transaction
@@ -117,7 +118,10 @@ def record_turn(
     Guarantees:
       - Uses identical turn_id, thread_id, turn_number as PostgreSQL storage.ledger.
       - An empty entities list or missing/invalid Version NEVER skips Claim write.
-      - If is_abstained is True, entities are NOT linked as active conversation memory.
+      - Stores a turn's setting entities when the setting exists in the corpus,
+        even if the answer step refused for a verifier/writer reason [Rule g].
+      - Skips entities for MISSING_KEYWORD, INJECTION, OUT_OF_SCOPE, and UNSUPPORTED_VERSION.
+      - Preserves refusal reasons for visibility on subsequent turns.
       - Zero string-formatted Cypher; all inputs passed as parameters.
     """
     entities = entities or []
@@ -135,6 +139,7 @@ def record_turn(
                     t.turn_number = $turn_number,
                     t.is_abstained = $is_abstained,
                     t.abstention_code = $abstention_code,
+                    t.abstention_reason = $abstention_reason,
                     t.created_at = datetime()
                 """,
                 {
@@ -143,6 +148,7 @@ def record_turn(
                     "turn_number": turn_number,
                     "is_abstained": is_abstained,
                     "abstention_code": abstention_code,
+                    "abstention_reason": abstention_reason,
                 },
             )
 
@@ -194,12 +200,19 @@ def record_turn(
                     {"question_id": question_id, "version_tag": version_tag},
                 )
 
-            # 5. Entity Nodes & Edges (Only stored as active memory if turn was NOT an abstention)
-            if not is_abstained:
+            # 5. Entity Nodes & Edges [Rule g]:
+            # Store a turn's setting entities when the setting exists in the corpus,
+            # even if the answer step refused for a verifier/writer reason.
+            # Keep skipping entities for MISSING_KEYWORD, INJECTION and OUT_OF_SCOPE.
+            skip_entity_storage = is_abstained and abstention_code in {
+                "INJECTION", "MISSING_KEYWORD", "OUT_OF_SCOPE", "UNSUPPORTED_VERSION"
+            }
+            if not skip_entity_storage:
+                corpus_settings = get_corpus_settings()
                 for ent in entities:
                     ent_name = ent.get("name", "").strip().lower()
                     ent_type = ent.get("type", "ConfigParam")
-                    if ent_name:
+                    if ent_name and (not corpus_settings or ent_name in corpus_settings):
                         tx.run(
                             """
                             MATCH (t:Turn {id: $turn_id})
@@ -406,6 +419,7 @@ def resolve_entity_for_turn(
                        t.turn_number AS turn_number,
                        coalesce(t.is_abstained, false) AS is_abstained,
                        t.abstention_code AS abstention_code,
+                       t.abstention_reason AS abstention_reason,
                        v.tag AS prior_version,
                        collect(DISTINCT e.name) AS entities
                 """,
@@ -453,12 +467,14 @@ def resolve_entity_for_turn(
             "latency_ms": round(latency_ms, 3),
         }
 
-    # 3. Rule 3: Prior turn was an abstention / refusal
-    if record["is_abstained"]:
+    # 3. Rule 3: Prior turn was an abstention / refusal [Rule g]
+    if record["is_abstained"] and record.get("abstention_code") in {
+        "INJECTION", "MISSING_KEYWORD", "OUT_OF_SCOPE", "UNSUPPORTED_VERSION"
+    }:
         return {
             "status": "ambiguous",
             "reason": "prior_turn_refusal",
-            "clarification": "The previous question could not be answered from the documentation. Which parameter would you like to investigate?",
+            "clarification": f"The previous question was refused ({record.get('abstention_code')}). Which parameter would you like to investigate?",
             "latency_ms": round(latency_ms, 3),
         }
 
@@ -517,6 +533,9 @@ def resolve_entity_for_turn(
         "target_version": target_version,
         "prior_version": record["prior_version"],
         "prior_turn_number": record["turn_number"],
+        "prior_is_abstained": record["is_abstained"],
+        "prior_abstention_code": record.get("abstention_code"),
+        "prior_abstention_reason": record.get("abstention_reason"),
         "rewritten_query": rewritten_query,
         "latency_ms": round(latency_ms, 3),
     }
