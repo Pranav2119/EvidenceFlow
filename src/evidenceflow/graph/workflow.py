@@ -28,6 +28,8 @@ from evidenceflow.graph.audit_wrapper import audit_node_wrapper
 from evidenceflow.storage.ledger import (
     get_postgres_connection_string,
     record_turn as pg_record_turn,
+    record_step,
+    get_next_step_number,
 )
 from evidenceflow.memory.graph_client import (
     record_turn as neo4j_record_turn,
@@ -212,18 +214,21 @@ def run_pipeline(
         logger.error("Failed to record turn to PostgreSQL turns table: %s", e)
 
     # 2. Record turn in Neo4j conversational memory graph
+    memory_write_status = "disabled"
+    memory_error_msg = None
     if enable_memory:
         try:
             detected_settings = extract_all_explicit_settings(query) or extract_all_explicit_settings(state.query)
             entities = [{"name": s, "type": "ConfigParam"} for s in detected_settings]
             claims = []
             for c in state.citations:
-                cid = c.chunk_id if hasattr(c, "chunk_id") else c.get("chunk_id")
-                quote = c.quote if hasattr(c, "quote") else c.get("quote", "")
+                cid = getattr(c, "chunk_id", None) if not isinstance(c, dict) else c.get("chunk_id")
+                quote = getattr(c, "quote", "") if not isinstance(c, dict) else c.get("quote", "")
+                is_ver = getattr(c, "is_verified", False) if not isinstance(c, dict) else c.get("is_verified", False)
                 if cid:
                     claims.append({
                         "text": quote[:200] if quote else state.draft_answer[:200],
-                        "verdict": "VERIFIED" if (hasattr(c, "is_verified") and c.is_verified) or c.get("is_verified") else "UNVERIFIED",
+                        "verdict": "VERIFIED" if is_ver else "UNVERIFIED",
                         "passage_id": cid,
                     })
 
@@ -239,8 +244,32 @@ def run_pipeline(
                 abstention_code=state.abstention_code,
                 abstention_reason=state.abstention_reason,
             )
+            memory_write_status = "success"
         except Exception as e:
-            logger.error("Failed to record turn to Neo4j conversational memory: %s", e)
+            memory_write_status = "error"
+            memory_error_msg = str(e)
+            logger.error("Failed to record turn to Neo4j conversational memory: %s", e, exc_info=True)
+
+        try:
+            db_steps = get_next_step_number(thread_id)
+            state_steps = len(getattr(state, "audit_trail", [])) + 1
+            step_number = max(state_steps, db_steps)
+            record_step(
+                turn_id=turn_uuid,
+                thread_id=thread_id,
+                step_number=step_number,
+                node="memory_writer",
+                action="record_memory_turn",
+                status="success" if memory_write_status == "success" else "error",
+                decided_by="rule",
+                latency_ms=0.0,
+                details={
+                    "memory_write_status": memory_write_status,
+                    "error": memory_error_msg,
+                },
+            )
+        except Exception as step_err:
+            logger.error("Failed to record memory write step to step_ledger: %s", step_err, exc_info=True)
 
     if conn_to_close is not None:
         try:

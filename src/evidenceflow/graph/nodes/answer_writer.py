@@ -226,7 +226,14 @@ def extract_citations(answer: str, passages: List[Dict[str, Any]]) -> List[Citat
     Extracts all [^chunk_id] citation markers from the answer and maps them to Citation models.
     D3-4 fix: Constructs strongly-typed Citation Pydantic instances.
     """
-    cited_ids = re.findall(r"\[\^([^\]]+)\]", answer)
+    raw_blocks = re.findall(r"\[\^([^\]]+)\]", answer)
+    cited_ids = []
+    for block in raw_blocks:
+        parts = re.split(r"[,;\s]+", block)
+        for part in parts:
+            clean_cid = part.lstrip("^").strip()
+            if clean_cid:
+                cited_ids.append(clean_cid)
     passage_map = {p["chunk_id"]: p for p in passages}
 
     citations: List[Citation] = []
