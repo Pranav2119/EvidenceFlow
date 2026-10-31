@@ -32,6 +32,7 @@ from evidenceflow.storage.ledger import (
 from evidenceflow.memory.graph_client import (
     record_turn as neo4j_record_turn,
     extract_explicit_setting,
+    extract_all_explicit_settings,
 )
 
 logger = logging.getLogger(__name__)
@@ -213,8 +214,8 @@ def run_pipeline(
     # 2. Record turn in Neo4j conversational memory graph
     if enable_memory:
         try:
-            detected_setting = extract_explicit_setting(query) or extract_explicit_setting(state.query)
-            entities = [{"name": detected_setting, "type": "ConfigParam"}] if detected_setting else []
+            detected_settings = extract_all_explicit_settings(query) or extract_all_explicit_settings(state.query)
+            entities = [{"name": s, "type": "ConfigParam"} for s in detected_settings]
             claims = []
             for c in state.citations:
                 cid = c.chunk_id if hasattr(c, "chunk_id") else c.get("chunk_id")

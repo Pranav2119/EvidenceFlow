@@ -52,8 +52,9 @@ def extract_explicit_setting(query: str) -> Optional[str]:
 
 # Pronoun patterns that trigger follow-up resolution when NO explicit parameter is mentioned
 FOLLOW_UP_PRONOUN_PATTERNS = [
-    r"\b(it|that|this|these|those)\b",
+    r"\b(it|its|that|this|these|those|their|them|both)\b",
     r"\b(that setting|the setting|that parameter|the parameter|the option|that value)\b",
+    r"\b(which of (?:those|these|them)|both (?:settings|parameters|options))\b",
     r"\b(what about|how about|did that change|is that still|was that)\b",
     r"^\s*(what about\s+|how about\s+)?in v?(14|15|16)\??\s*$",
 ]
@@ -62,6 +63,7 @@ FOLLOW_UP_PRONOUN_PATTERNS = [
 EXPLICIT_NON_FOLLOWUP_PATTERNS = [
     r"\b(is it possible to|can it be|does it mean that|how is it that)\b",
     r"\b(setting that controls|parameter that defines|option that sets)\b",
+    r"\b(in its documentation|on its website|its source code)\b",
 ]
 
 
@@ -406,16 +408,30 @@ def resolve_entity_for_turn(
 
     prior_entities = [e for e in record["entities"] if e]
 
-    # 5. Rule 4: Multiple entities in prior turn
+    # 5. Rule 4 & Rule h: Multiple entities in prior turn
     if len(prior_entities) > 1:
-        options = " or ".join([f"'{e}'" for e in prior_entities])
-        return {
-            "status": "ambiguous",
-            "reason": "multiple_entities",
-            "clarification": f"The previous question discussed multiple parameters ({options}). Which one did you mean?",
-            "candidate_entities": prior_entities,
-            "latency_ms": round(latency_ms, 3),
-        }
+        options = " and ".join([f"'{e}'" for e in prior_entities])
+        is_plural = any(re.search(pat, follow_up_query.lower()) for pat in [
+            r"\b(those|these|both|them|their)\b",
+            r"\b(which of (?:those|these|them)|both of (?:those|these|them))\b",
+        ])
+        if is_plural:
+            # Under rule h: Plural pronouns ask or resolve to all; never pick one arbitrarily
+            return {
+                "status": "ambiguous",
+                "reason": "multiple_entities_plural",
+                "clarification": f"The previous question discussed multiple parameters ({options}). Would you like me to check both or focus on a specific one?",
+                "candidate_entities": prior_entities,
+                "latency_ms": round(latency_ms, 3),
+            }
+        else:
+            return {
+                "status": "ambiguous",
+                "reason": "multiple_entities",
+                "clarification": f"The previous question discussed multiple parameters ({options}). Which one did you mean?",
+                "candidate_entities": prior_entities,
+                "latency_ms": round(latency_ms, 3),
+            }
 
     # 6. No entities recorded on prior turn
     if len(prior_entities) == 0:
