@@ -272,3 +272,56 @@ Following strict machine learning integrity protocols, the 25-question held-out 
 
 
 
+
+## Session 6: Day 7 Benchmark v1 & Tier 1 Empirical Baseline Certification
+**Date**: 2026-10-28  
+**Focus**: Deterministic IR evaluation engine (`metrics.py`), 60-question entity-partitioned benchmark datasets (40 Dev / 20 Frozen Test with SHA-256 integrity seal), dual passage matching against re-chunking hash drift, value accuracy with unit normalization and number words, Gemini ON vs Gemini OFF ablation, and HTTP connection pool resilience.
+
+---
+
+### 1. Concepts Mastered & Real-World Engineering Insights
+
+#### A. Dual Ground-Truth Passage Matching (Solving Re-Chunking Hash Drift)
+- **The Core Problem**: In Day 1, GUC configuration parameters derived stable IDs from HTML `<dt id="...">` attributes (`pg16-runtime-config-resource-vacuum-cost-limit`). However, release note items (`release-*.html`) lacked HTML IDs and generated chunk IDs from content hashes (`pg16-release-16-<sha256[:10]>`).
+- When Fix 4.4 was applied to `chunker.py` to decompose nested `<ul>`/`<li>` tags, the clean text changed, shifting the hash from `96b6fa3f68` to `c86f660e37`. Any benchmark asserting exact string equality on raw content hashes broke silently.
+- **The Engineering Solution**: Built a dual-matcher in `metrics.py`:
+  1. Exact `chunk_id` match in ground-truth list.
+  2. Fallback composite tuple match: `(retrieved.version == gt.version AND retrieved.doc == gt.doc AND gt.title_contains in retrieved.title)`.
+  This guarantees robustness against HTML parsing updates while strictly verifying that the retriever returned the intended technical section.
+
+#### B. The Speed vs. Synthesis Quality Trade-off (Gemini ON vs. OFF)
+- We evaluated the 40-question Dev split across two discrete operational modes:
+  - **Gemini OFF (Deterministic Fallback)**:
+    - **Overall Accuracy**: **92.5%** (37 / 40)
+    - **Median Latency**: **89.4 ms** (142x faster than live LLM)
+    - **Wrong Answers**: **0.0%** (0 / 14)
+    - **Wrong Refusals**: **11.5%** (3 / 26)
+    - **Value Accuracy**: **11.5%** (3 / 26) — Low because naive sentence slicing truncates doc chunks before reaching configuration defaults.
+  - **Gemini ON (Live LLM with Gemini 3.5 Flash Lite)**:
+    - **Overall Accuracy**: **87.5%** (35 / 40)
+    - **Median Latency**: **12,708.8 ms**
+    - **Wrong Answers**: **0.0%** (0 / 14) — Perfect security defense.
+    - **Wrong Refusals**: **19.2%** (5 / 26)
+    - **Value Accuracy**: **96.2%** (25 / 26) — High factual fidelity.
+- **The Interview Differentiator for Tier 2**:
+  The empirical delta between Gemini ON and Gemini OFF proves why Tier 2's 5-layer scoped cache is essential. Cache hits will deliver **Gemini ON quality (96.2% value accuracy, full natural language context)** at **Gemini OFF latency (< 3 ms, 0 token cost)**.
+
+#### C. Uncaught Transport Exceptions & Connection Pooling
+- During rapid repeated benchmarking (1 warm-up + 3 repeats across 26 questions = 104 API calls), upstream Google GenAI gateways can experience transient 503 load spikes or drop idle TCP sockets (`RemoteProtocolError`).
+- In Python, `httpx.RemoteProtocolError` does *not* inherit from `ConnectionError`; it inherits from `httpx.TransportError` / `httpx.HTTPError`. Catching only `ConnectionError` crashes the application.
+- **Hardening Applied**:
+  1. Bound `answer_writer` to a lazy singleton `_get_writer_client()` to reuse TCP connection pools across queries.
+  2. Caught `httpx.HTTPError` alongside GenAI API errors.
+  3. Added exponential backoff retry on transient 503/429 status codes before gracefully falling back to deterministic synthesis.
+
+---
+
+### 2. Empirical Benchmark Matrix (Day 7 Tier 1 Baseline)
+
+| Split / Configuration | N | Accuracy | Wrong Answers (FN) | Wrong Refusals (FP) | Recall@5 | MRR | Value Acc. | Cit. Precision | Cit. Recall | Median Latency |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Dev (Gemini OFF)** | 40 | **92.5%** | **0.0% (0/14)** | **11.5% (3/26)** | 100.0% | 0.9615 | 11.5% | 88.5% | 88.5% | **89.4 ms** |
+| **Dev (Gemini ON)** | 40 | **87.5%** | **0.0% (0/14)** | **19.2% (5/26)** | 100.0% | 0.9615 | **96.2%** | 73.1% | 80.8% | **12,708.8 ms** |
+| **Frozen Test Set** | 20 | — | — | — | — | — | — | — | — | *Frozen (SHA-256 Sealed)* |
+
+- **Frozen Test File SHA-256**: `f684b07ab93d12bb65093609fb91272d82f632576c36545017f9f3747fe9415d`

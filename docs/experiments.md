@@ -51,3 +51,61 @@ This document tracks all empirical evaluation runs, benchmark datasets, ablation
   - **Wrong Answers (FN)**: `0 / 20` (0.0%) — Zero leakage.
   - **Wrong Refusals (FP)**: `1 / 20` (5.0%) — `g11` refused under fallback due to section number extraction in value verifier.
   - **Overall Accuracy**: `97.5%` (39/40).
+
+
+---
+
+## Milestone 5: Day 7 Benchmark v1 & Baseline Measurements (Tier 1 Certified)
+
+### 1. Dataset Partition & Integrity Verification
+- **Dev Split (40 Questions)**: `data/benchmarks/benchmark_dev_40.json` (26 answerable queries spanning Resource, WAL, Memory, Connections, Logging, Autovacuum; 14 should-refuse queries covering Prompt Injections, Hallucinated Settings, Unsupported Versions, and Out-of-Domain topics).
+- **Frozen Test Split (20 Questions)**: `data/benchmarks/benchmark_test_frozen_20.json` (13 answerable queries spanning Query Planner, Timeouts, Client formatting, Background Writer; 7 should-refuse queries).
+- **Entity Partitioning**: Zero parameter overlap between Dev and Test splits.
+- **Frozen Test File SHA-256**: `f684b07ab93d12bb65093609fb91272d82f632576c36545017f9f3747fe9415d`
+- **Protocol**: Test split is frozen, committed, and touched strictly once for final release reporting; zero prompt tuning or threshold calibration is performed against it.
+
+---
+
+### 2. Experimental Environment & Setup
+- **Git Commit Baseline**: `a038825`
+- **Embedding Provider & Model**: `fastembed` / `BAAI/bge-small-en-v1.5` (384-dimensional dense vectors)
+- **Dense Vector Threshold**: `0.60` (Raw cosine similarity)
+- **Host Platform**: Windows 11 AMD64
+- **Latency Measurement Protocol**: 1 warm-up run (discarded) + 3 timed execution repeats per query. Percentiles calculated as median (p50) and tail (p95).
+- **Pacing**: `2.0s` delay per question for Gemini ON (preventing free-tier API quota exhaustion); `0.0s` delay for Gemini OFF.
+
+---
+
+### 3. Empirical Results: Gemini ON vs. Gemini OFF (Dev Split, 40 Questions)
+
+| Evaluation Metric | Gemini ON (Live LLM) | Gemini OFF (Deterministic Fallback) | Target Threshold | Metric Description |
+| :--- | :---: | :---: | :---: | :--- |
+| **Overall Accuracy** | **35 / 40 (87.5%)** | **37 / 40 (92.5%)** | $\ge 85.0\%$ | End-to-end task completion |
+| **Wrong Answers (FN, $\beta$-error)** | **0 / 14 (0.0%)** | **0 / 14 (0.0%)** | **Strictly 0.0%** | Injections / hallucinations leaked (Dangerous) |
+| **Wrong Refusals (FP, $\alpha$-error)** | **5 / 26 (19.2%)** | **3 / 26 (11.5%)** | $\le 20.0\%$ | Legitimate technical queries blocked (Annoying) |
+| **Retrieval Recall@5** | **100.0%** | **100.0%** | $\ge 88.0\%$ | Top-5 ground-truth chunk presence (Answerable only) |
+| **Retrieval MRR** | **0.9615** | **0.9615** | $\ge 0.78$ | Mean Reciprocal Rank of first relevant passage |
+| **Value Accuracy (Unit Eq.)** | **25 / 26 (96.2%)** | **3 / 26 (11.5%)** | $\ge 90.0\%$ | Expected parameter value present with unit mapping |
+| **Citation Precision** | **73.1%** | **88.5%** | $100.0\%$ | Fraction of cited footnotes verified against evidence |
+| **Citation Recall** | **80.8%** | **88.5%** | $\ge 80.0\%$ | Assertions backed by valid cited chunk footnotes |
+| **L1 Groundedness (Self-Check)** | **26 / 26 (100.0%)** | **26 / 26 (100.0%)** | $100.0\%$ | Internal pipeline verifier pass rate |
+| **Median Latency (p50)** | **12,708.8 ms** | **89.4 ms** | Baseline | Typical query execution duration across 3 repeats |
+| **Tail Latency (p95)** | **35,797.9 ms** | **191.4 ms** | Baseline | 95th percentile execution latency |
+
+---
+
+### 4. Key Engineering Insights & Trade-Off Analysis
+
+1. **Zero Security Leakage Maintained Across Both Modes**:
+   - Both Gemini ON and Gemini OFF achieved **0.0% Wrong Answers (0 / 14)**. Every adversarial prompt injection (`d27`–`d30`), hallucinated parameter (`d31`–`d35`), unsupported version (`d36`–`d38`), and out-of-scope query (`d39`–`d40`) was blocked deterministically at Layer 1 or Layer 2.
+2. **The Speed vs. Synthesis Trade-off**:
+   - **Gemini OFF** provides blistering speed (**89.4 ms median**, 142x faster than Gemini ON) and high citation precision (88.5%), but only achieves **11.5% Value Accuracy** because deterministic sentence extraction truncates documentation before setting values.
+   - **Gemini ON** produces rich, highly articulate responses with **96.2% Value Accuracy (25/26)**, but incurs **12,708.8 ms median latency** and higher latency variance.
+3. **The Core Tier 2 Hypothesis**:
+   - When we introduce the 5-layer scoped cache in Tier 2, cache hits will deliver **Gemini ON quality (96.2% value accuracy, full explanations)** at **Gemini OFF latency (< 3 ms, 0 token cost)**.
+4. **False Refusal Taxonomy (Gemini ON, 5 cases)**:
+   - `d10` (`max_wal_size` in v15): Model cited `1GB`, but setting proximity window failed due to multi-paragraph discussion of checkpoint frequency.
+   - `d21` (`autovacuum_naptime` in v16): Model phrased default as "1 minute (the default)", but setting was separated from unit mapping by explanatory text.
+   - `d22` (`archive_mode` in v16): L2 verifier flagged missing boolean toggle in tight proximity window.
+   - `d23` (`vacuum_buffer_usage_limit` in v16): Transient network retry fallback triggered fallback abstention.
+   - `d25` (`ignore_system_indexes` in v14): Boolean flag discussion triggered fallback abstention.

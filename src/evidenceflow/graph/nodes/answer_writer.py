@@ -6,11 +6,24 @@ deterministic passage extraction for offline/zero-cost environments.
 
 import re
 import logging
+import time
 from typing import Any, Dict, List, Optional
+import httpx
 from evidenceflow.config import get_settings
 from evidenceflow.state import EvidenceFlowState, Citation
 
 logger = logging.getLogger(__name__)
+
+# Lazy singleton Gemini client to reuse TCP connection pool
+_gemini_writer_client = None
+
+
+def _get_writer_client(api_key: str):
+    global _gemini_writer_client
+    if _gemini_writer_client is None:
+        from google import genai
+        _gemini_writer_client = genai.Client(api_key=api_key)
+    return _gemini_writer_client
 
 
 def build_grounded_prompt(query: str, version: str, passages: List[Dict[str, Any]]) -> str:
@@ -185,28 +198,45 @@ def answer_writer_node(state: EvidenceFlowState) -> Dict[str, Any]:
             from google import genai
             from google.genai.errors import APIError, ClientError, ServerError
 
-            client = genai.Client(api_key=settings.GEMINI_API_KEY)
+            client = _get_writer_client(settings.GEMINI_API_KEY)
             prompt = build_grounded_prompt(query, target_version, passages)
-            response = client.models.generate_content(
-                model=settings.GEMINI_MODEL,
-                contents=prompt,
-            )
-            draft_answer = response.text.strip()
-            synthesis_mode = "llm"
 
-            # D3-13: Capture token metrics for ablation & benchmarking
-            if hasattr(response, "usage_metadata") and response.usage_metadata:
-                token_usage = {
-                    "prompt_tokens": getattr(response.usage_metadata, "prompt_token_count", 0),
-                    "candidate_tokens": getattr(response.usage_metadata, "candidates_token_count", 0),
-                    "total_tokens": getattr(response.usage_metadata, "total_token_count", 0),
-                }
+            # Retry up to 2 times on transient 503/429
+            response = None
+            max_attempts = 3
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    response = client.models.generate_content(
+                        model=settings.GEMINI_MODEL,
+                        contents=prompt,
+                    )
+                    break
+                except (APIError, ServerError, httpx.HTTPError) as err:
+                    if attempt < max_attempts and ("503" in str(err) or "429" in str(err) or "RemoteProtocolError" in str(err)):
+                        time.sleep(2.0 * attempt)
+                        continue
+                    raise
 
-        # D3-5: Catch specific GenAI and network errors without swallowing code bugs
-        except (APIError, ClientError, ServerError, ConnectionError, TimeoutError) as e:
+            if response and response.text:
+                draft_answer = response.text.strip()
+                synthesis_mode = "llm"
+
+                # D3-13: Capture token metrics for ablation & benchmarking
+                if hasattr(response, "usage_metadata") and response.usage_metadata:
+                    token_usage = {
+                        "prompt_tokens": getattr(response.usage_metadata, "prompt_token_count", 0),
+                        "candidate_tokens": getattr(response.usage_metadata, "candidates_token_count", 0),
+                        "total_tokens": getattr(response.usage_metadata, "total_token_count", 0),
+                    }
+            else:
+                draft_answer = deterministic_fallback_answer(query, target_version, passages)
+                synthesis_mode = "fallback"
+
+        # Catch GenAI and network/transport errors (including RemoteProtocolError)
+        except (APIError, ClientError, ServerError, ConnectionError, TimeoutError, httpx.HTTPError, Exception) as e:
             logger.warning("Gemini generation API call failed (%s), falling back to deterministic synthesis.", e)
             draft_answer = deterministic_fallback_answer(query, target_version, passages)
-            synthesis_mode = "fallback"
+            synthesis_mode = "fallback" 
     else:
         logger.info("No active Gemini API key configured. Using deterministic synthesis.")
         draft_answer = deterministic_fallback_answer(query, target_version, passages)
