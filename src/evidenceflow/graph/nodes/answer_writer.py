@@ -282,6 +282,9 @@ def answer_writer_node(state: EvidenceFlowState) -> Dict[str, Any]:
     abstention_code: Optional[str] = None
     is_abstained: bool = False
     abstention_reason: Optional[str] = None
+    pure_api_latency_ms: Optional[float] = None
+    total_sleep_ms: float = 0.0
+    attempts_count: int = 0
 
     # D3-1: Check for real API key
     if is_valid_gemini_key(settings.GEMINI_API_KEY):
@@ -292,19 +295,29 @@ def answer_writer_node(state: EvidenceFlowState) -> Dict[str, Any]:
             client = _get_writer_client(settings.GEMINI_API_KEY)
             prompt = build_grounded_prompt(query, target_version, passages)
 
-            # Retry up to 2 times on transient 503/429
+            # Retry up to 2 times on transient 503/429 with isolated pure API timing [Rule m]
             response = None
             max_attempts = 3
+            pure_api_latency_ms = 0.0
+            total_sleep_ms = 0.0
+            attempts_count = 0
             for attempt in range(1, max_attempts + 1):
+                attempts_count += 1
                 try:
+                    t_api_start = time.perf_counter()
                     response = client.models.generate_content(
                         model=settings.GEMINI_MODEL,
                         contents=prompt,
                     )
+                    pure_api_latency_ms += (time.perf_counter() - t_api_start) * 1000.0
                     break
                 except (APIError, ServerError, httpx.HTTPError) as err:
+                    pure_api_latency_ms += (time.perf_counter() - t_api_start) * 1000.0
                     if attempt < max_attempts and ("503" in str(err) or "429" in str(err) or "RemoteProtocolError" in str(err)):
-                        time.sleep(2.0 * attempt)
+                        sleep_duration = 2.0 * attempt
+                        t_sleep_start = time.perf_counter()
+                        time.sleep(sleep_duration)
+                        total_sleep_ms += (time.perf_counter() - t_sleep_start) * 1000.0
                         continue
                     raise
 
@@ -362,6 +375,9 @@ def answer_writer_node(state: EvidenceFlowState) -> Dict[str, Any]:
         "citations_count": len(citations),
         "is_abstained": is_abstained,
         "synthesis_mode": synthesis_mode,
+        "gemini_pure_api_latency_ms": round(pure_api_latency_ms, 3) if pure_api_latency_ms is not None else None,
+        "gemini_attempts": attempts_count if synthesis_mode == "llm" else None,
+        "gemini_sleep_duration_ms": round(total_sleep_ms, 3) if synthesis_mode == "llm" else 0.0,
         **token_usage,
     }
 
