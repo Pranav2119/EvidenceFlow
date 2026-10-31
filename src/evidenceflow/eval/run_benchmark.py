@@ -1,12 +1,13 @@
 """
-run_benchmark.py: Comprehensive Tier 1 Benchmark Execution Runner for EvidenceFlow AI.
+run_benchmark.py: Comprehensive Tier 1 & Tier 2 Benchmark Execution Runner for EvidenceFlow AI.
 Evaluates version-grounded questions against the baseline pipeline, recording:
   - Guardrail Error Rates: Wrong Refusals (FP) and Wrong Answers (FN)
   - Information Retrieval (IR) Metrics: Recall@5, MRR (computed on answerable queries only)
   - Quality Metrics: Value Accuracy (with unit equivalence) & Citation Precision/Recall
   - Pipeline Self-Check: L1 Groundedness
   - Operational Latency: 3 repeats (warm-up discarded), Median and P95 latency (ms)
-Supports running Dev (40 questions) or Frozen Test (20 questions) splits with Gemini ON or OFF.
+Supports running Dev (40 questions) or Frozen Test (20 questions) splits with Gemini ON/OFF
+and Memory ON/OFF.
 """
 
 import argparse
@@ -84,6 +85,7 @@ def run_benchmark(
     repeats: int = 3,
     delay_seconds: float = 1.5,
     verbose: bool = True,
+    enable_memory: bool = False,
 ) -> Dict[str, Any]:
     """
     Executes the benchmark suite over the designated split or file.
@@ -106,10 +108,11 @@ def run_benchmark(
     total_q = len(questions)
 
     print("\n" + "=" * 76)
-    print(f" EvidenceFlow AI — Tier 1 Benchmark Execution ({split.upper()} Split)")
+    print(f" EvidenceFlow AI — Evaluation Benchmark ({split.upper()} Split)")
     print("=" * 76)
     print(f"Dataset File:     {file_path.name} ({total_q} questions)")
     print(f"Gemini Mode:      {'ON (Live LLM)' if gemini_enabled else 'OFF (Deterministic Fallback)'}")
+    print(f"Memory Mode:      {'ON (Neo4j Conversational Memory)' if enable_memory else 'OFF (Direct Single-Turn)'}")
     print(f"Latency Repeats:  {repeats} runs (warm-up discarded)")
     print(f"Query Pacing:     {delay_seconds}s delay")
     print(f"Score Threshold:  {settings.RETRIEVAL_SCORE_THRESHOLD}")
@@ -156,6 +159,7 @@ def run_benchmark(
             version=version,
             thread_id=f"bench_{split}_{qid}_warmup",
             use_postgres_checkpointer=False,
+            enable_memory=enable_memory,
         )
 
         timed_latencies = []
@@ -169,6 +173,7 @@ def run_benchmark(
                 version=version,
                 thread_id=f"bench_{split}_{qid}_r{r}",
                 use_postgres_checkpointer=False,
+                enable_memory=enable_memory,
             )
             t_end = time.perf_counter()
             duration_ms = (t_end - t_start) * 1000.0
@@ -296,6 +301,7 @@ def run_benchmark(
         "embedding_model": settings.GEMINI_EMBEDDING_MODEL if settings.EMBEDDING_PROVIDER == "gemini" else "BAAI/bge-small-en-v1.5",
         "vector_score_threshold": settings.RETRIEVAL_SCORE_THRESHOLD,
         "gemini_mode": "ON" if gemini_enabled else "OFF (Deterministic Fallback)",
+        "memory_mode": "ON (Neo4j)" if enable_memory else "OFF",
         "platform": f"{platform.system()} {platform.release()} ({platform.machine()})",
         "repeats": repeats,
         "delay_seconds": delay_seconds,
@@ -328,7 +334,7 @@ def run_benchmark(
 
     # Print Formatted Markdown Table
     print("\n" + "=" * 76)
-    print(" EvidenceFlow AI — Tier 1 Benchmark v1 Final Results Table")
+    print(" EvidenceFlow AI — Evaluation Benchmark Final Results Table")
     print("=" * 76)
     print(f"| Metric | Count | Percentage / Value | Target / Classification |")
     print(f"| :--- | :---: | :---: | :--- |")
@@ -341,7 +347,7 @@ def run_benchmark(
     print(f"| **Citation Precision** | — | **{mean_precision:.1f}%** | Verified Quoted Footnotes |")
     print(f"| **Citation Recall** | — | **{mean_cit_recall:.1f}%** | Claims with Citations |")
     print(f"| **L1 Groundedness (Self-Check)** | {l1_count} / {answerable_count} | **{l1_pct:.1f}%** | In-loop Pipeline Verifier |")
-    print(f"| **Median Latency** | — | **{lat_percentiles[50]:.1f} ms** | Across 3 repeats |")
+    print(f"| **Median Latency** | — | **{lat_percentiles[50]:.1f} ms** | Across {repeats} repeats |")
     print(f"| **P95 Latency** | — | **{lat_percentiles[95]:.1f} ms** | Tail latency |")
     print("=" * 76 + "\n")
 
@@ -349,13 +355,14 @@ def run_benchmark(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Run Tier 1 Evaluation Benchmark.")
+    parser = argparse.ArgumentParser(description="Run Evaluation Benchmark.")
     parser.add_argument("--split", choices=["dev", "test"], default="dev", help="Dataset split (dev or test)")
     parser.add_argument("--dataset", type=str, default=None, help="Explicit dataset JSON file path")
     parser.add_argument("--tier", type=int, default=1, help="Evaluation tier")
     parser.add_argument("--repeats", type=int, default=3, help="Latency repeat runs (warm-up discarded)")
     parser.add_argument("--delay", type=float, default=1.5, help="Query pacing delay in seconds")
     parser.add_argument("--no-gemini", action="store_true", help="Force offline mode with Gemini disabled")
+    parser.add_argument("--enable-memory", action="store_true", help="Enable Neo4j conversational memory")
     parser.add_argument("--output", type=str, default=None, help="Output JSON results path")
     args = parser.parse_args()
 
@@ -366,6 +373,7 @@ def main():
         repeats=args.repeats,
         delay_seconds=args.delay,
         verbose=True,
+        enable_memory=args.enable_memory,
     )
 
     if args.output:

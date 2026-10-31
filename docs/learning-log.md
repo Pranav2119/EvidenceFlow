@@ -325,3 +325,45 @@ Following strict machine learning integrity protocols, the 25-question held-out 
 | **Frozen Test Set** | 20 | — | — | — | — | — | — | — | — | *Frozen (SHA-256 Sealed)* |
 
 - **Frozen Test File SHA-256**: `f684b07ab93d12bb65093609fb91272d82f632576c36545017f9f3747fe9415d`
+
+
+---
+
+## Session 7: Day 8 Neo4j Conversational Graph Memory & Multi-Turn Benchmark
+**Date**: 2026-10-31  
+**Focus**: Graph conversational memory schema (`:Turn`, `:Question`, `:Entity`, `:Claim`, `:Version`), discrete ACID transactions, explicit setting precedence, ambiguity detection on refusals and multi-entity turns, query rewriting without memory leakage into citations, 20-conversation follow-up benchmark, and single-turn non-inferiority evaluation.
+
+---
+
+### 1. Concepts Mastered & Real-World Engineering Insights
+
+#### A. Graph Memory vs. Linear Transcript Bloat
+- **The Problem with Raw Chat History**: Stacking previous turns into the LLM prompt multiplies token consumption ($O(N)$ growth), increases latency, and causes catastrophic "version bleed" where rules discussed for PostgreSQL 14 bleed into PostgreSQL 16 queries.
+- **The Graph Traversal Solution**: In Neo4j, dialogue is modeled as indexed graph nodes (`(:Turn)-[:CONCERNS]->(:Entity)`). Resolving pronoun follow-ups (*"Did that change in v16?"*) is an index-backed graph traversal taking **~6-7 ms**, consuming **0 LLM tokens**.
+
+#### B. The Five Safety & Precision Contracts for Conversational Memory
+1. **Explicit Setting / Version Precedence**: An explicit parameter (e.g., `work_mem`) or version in the user's new question *strictly wins* over memory. Memory never overrides an explicit user intention.
+2. **Refusal Isolation**: If a turn was an abstention (adversarial injection, hallucinated setting, out-of-scope), its entities are not linked as active memory. Attempting to follow up on a refusal triggers a clarification request (*"The previous question could not be answered from documentation. Which parameter would you like to investigate?"*).
+3. **Multi-Entity Ambiguity Handling**: If the previous turn discussed multiple settings (e.g., `min_wal_size` and `max_wal_size`), a vague pronoun (*"Does it require a restart?"*) returns an ambiguous status and prompts the user for clarification rather than hallucinating an arbitrary choice.
+4. **Memory Only Rewrites Queries**: Graph memory NEVER injects synthesized answers or citations directly. It rewrites the query into a canonical question (e.g., *"What is wal_compression in PostgreSQL 16?"*), which then runs through standard input guards, Qdrant retrieval, and deterministic verification. Answers cite corpus chunks, NEVER memory nodes.
+5. **ACID Transaction Resilience**: Writing turns into Neo4j uses discrete parameterized queries in a single transaction. Missing version tags or empty entity lists never abort or skip the Claim write.
+
+---
+
+### 2. Empirical Multi-Turn & Non-Inferiority Results
+
+- **20-Conversation Follow-up Benchmark (`followup_eval_20.json`)**:
+  - **Overall Accuracy**: **100.0% (20 / 20)**
+  - **Pronoun Follow-up Resolution**: **100.0% (8 / 8)**
+  - **False Trigger Rate (Pass-through)**: **0.0% (0 / 5)**
+  - **Ambiguity Detection Rate**: **100.0% (7 / 7)**
+  - **Real Measured Latency**:
+    - Median (p50): **6.998 ms**
+    - Tail (p95): **49.870 ms**
+    - Pass-through check: **0.035–0.30 ms**
+- **Single-Turn Dev Benchmark (40 Questions, Memory ON vs. OFF)**:
+  - **Accuracy**: **92.5% vs. 92.5%** (Identical, $\Delta = 0.0\%$)
+  - **Wrong Answers (Leakage)**: **0.0% vs. 0.0%** (Zero regression)
+  - **Recall@5 & MRR**: **100.0% & 0.9615** (Identical)
+  - **L1 Groundedness**: **100.0% vs. 100.0%** (Identical)
+  - **Latency Overhead**: +45.5 ms median from Neo4j transactional Bolt commit.

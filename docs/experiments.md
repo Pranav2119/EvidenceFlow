@@ -109,3 +109,44 @@ This document tracks all empirical evaluation runs, benchmark datasets, ablation
    - `d22` (`archive_mode` in v16): L2 verifier flagged missing boolean toggle in tight proximity window.
    - `d23` (`vacuum_buffer_usage_limit` in v16): Transient network retry fallback triggered fallback abstention.
    - `d25` (`ignore_system_indexes` in v14): Boolean flag discussion triggered fallback abstention.
+
+
+---
+
+## Milestone 6: Day 8 Neo4j Conversational Graph Memory & Multi-Turn Benchmark
+
+### 1. Multi-Turn Follow-up Evaluation (20-Conversation Exam)
+- **Dataset**: `data/benchmarks/followup_eval_20.json` (8 genuine pronoun follow-ups, 5 non-follow-up questions with grammatical "it"/"that", 3 refusal follow-ups, 3 multi-entity follow-ups, 1 empty thread).
+- **Execution Script**: `src/evidenceflow/eval/run_followup_benchmark.py`
+- **Results**:
+  - **Overall Resolution Accuracy**: **100.0% (20 / 20)**
+  - **Pronoun Resolution Accuracy**: **100.0% (8 / 8)**
+  - **False Trigger Rate (Pass-through)**: **0.0% (0 / 5)** (Target: 0.0%)
+  - **Ambiguity Detection Rate**: **100.0% (7 / 7)** (Triggers clarifying question on multi-entity/refusal turns)
+- **Real Measured Resolution Latencies (Python `time.perf_counter()`)**:
+  - **Median (p50)**: **6.998 ms**
+  - **Tail (p95)**: **49.870 ms**
+  - **Mean**: **10.167 ms**
+  - **Min / Max**: **0.035 ms / 49.870 ms**
+  - *Engineering Note*: Regex pass-through took **0.035–0.30 ms**; Neo4j index-backed graph traversal queries averaged **6–7 ms**.
+
+---
+
+### 2. Single-Turn Non-Inferiority Verification (Dev Split, 40 Questions)
+We evaluated whether activating the Neo4j conversational memory graph resolver degraded single-turn retrieval, accuracy, or safety metrics on the 40-question Dev benchmark (`benchmark_dev_40.json`).
+
+| Metric | Memory OFF (Baseline) | Memory ON (Neo4j Graph) | Delta ($\Delta$) | Non-Inferiority Status |
+| :--- | :---: | :---: | :---: | :--- |
+| **Overall Accuracy** | **37 / 40 (92.5%)** | **37 / 40 (92.5%)** | **0.0%** | **Identical (Passed)** |
+| **Wrong Answers (FN, $\beta$-error)** | **0 / 14 (0.0%)** | **0 / 14 (0.0%)** | **0.0%** | **Zero leakage (Passed)** |
+| **Wrong Refusals (FP, $\alpha$-error)** | **3 / 26 (11.5%)** | **3 / 26 (11.5%)** | **0.0%** | **Identical (Passed)** |
+| **Retrieval Recall@5** | **100.0%** | **100.0%** | **0.0%** | **Identical (Passed)** |
+| **Retrieval MRR** | **0.9615** | **0.9615** | **0.0000** | **Identical (Passed)** |
+| **Value Accuracy** | **11.5%** | **11.5%** | **0.0%** | **Identical (Passed)** |
+| **Citation Precision** | **88.5%** | **88.5%** | **0.0%** | **Identical (Passed)** |
+| **Citation Recall** | **88.5%** | **88.5%** | **0.0%** | **Identical (Passed)** |
+| **L1 Groundedness (Self-Check)** | **26 / 26 (100.0%)** | **26 / 26 (100.0%)** | **0.0%** | **Identical (Passed)** |
+| **Median Latency** | **102.8 ms** | **148.3 ms** | **+45.5 ms** | Real Bolt connection + turn write I/O |
+| **Tail Latency (p95)** | **158.8 ms** | **263.8 ms** | **+105.0 ms** | Database transaction commit overhead |
+
+- **Conclusion**: Conversational graph memory provides 100% follow-up resolution accuracy with **zero quality or safety regression** on single-turn tasks.
