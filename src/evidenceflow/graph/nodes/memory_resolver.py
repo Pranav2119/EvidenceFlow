@@ -10,6 +10,7 @@ import logging
 from typing import Any, Dict
 from evidenceflow.state import EvidenceFlowState
 from evidenceflow.memory.graph_client import resolve_entity_for_turn
+from evidenceflow.guardrails.input_guardrail import check_pre_resolution_guards
 
 logger = logging.getLogger(__name__)
 
@@ -17,12 +18,39 @@ logger = logging.getLogger(__name__)
 def memory_resolver_node(state: EvidenceFlowState) -> Dict[str, Any]:
     """
     Inspects active conversational thread memory in Neo4j.
+    Enforces pre-resolution prompt injection and explicit off-domain checks
+    on the ORIGINAL query text before any memory rewriting occurs [Rule c].
     If the query is a follow-up pronoun query, rewrites it into a self-contained question.
     If ambiguous or referencing a refusal, routes to clarification abstention.
     If explicit or not a follow-up, passes through with 0 modification.
     """
     thread_id = state.thread_id or "default_thread"
     query = state.query
+
+    # Rule c: Pre-flight injection and explicit off-domain check on ORIGINAL text
+    is_safe, error_code, fail_reason = check_pre_resolution_guards(query)
+    if not is_safe:
+        logger.warning(
+            "Pre-resolution guard stopped query on thread %s: code=%s reason=%s",
+            thread_id,
+            error_code,
+            fail_reason,
+        )
+        existing_audit = list(state.audit_trail)
+        audit_entry = {
+            "node": "memory_resolver",
+            "action": "pre_resolution_abstained",
+            "code": error_code,
+            "reason": fail_reason,
+            "query": query,
+        }
+        return {
+            "is_abstained": True,
+            "abstention_code": error_code,
+            "abstention_reason": fail_reason,
+            "draft_answer": f"I cannot provide an answer for this question.\n\n- **Status**: ABSTAINED ({error_code})\n- **Reason**: {fail_reason}\n\n*EvidenceFlow AI adheres to strict groundedness: answers are only generated when verifiable evidence exists in official documentation.*",
+            "audit_trail": existing_audit + [audit_entry],
+        }
 
     resolution = resolve_entity_for_turn(thread_id, query)
 
