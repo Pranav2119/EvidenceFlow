@@ -76,7 +76,7 @@ This document tracks all empirical evaluation runs, benchmark datasets, ablation
 
 ---
 
-### 3. Empirical Results: Gemini ON vs. Gemini OFF (Dev Split, 40 Questions)
+### 3. Empirical Results: Baseline v1.0 — Gemini ON vs. Gemini OFF (Dev Split, 40 Questions)
 
 | Evaluation Metric | Gemini ON (Live LLM) | Gemini OFF (Deterministic Fallback) | Target Threshold | Metric Description |
 | :--- | :---: | :---: | :---: | :--- |
@@ -91,6 +91,36 @@ This document tracks all empirical evaluation runs, benchmark datasets, ablation
 | **L1 Groundedness (Self-Check)** | **26 / 26 (100.0%)** | **26 / 26 (100.0%)** | $100.0\%$ | Internal pipeline verifier pass rate |
 | **Median Latency (p50)** | **12,708.8 ms** | **89.4 ms** | Baseline | Typical query execution duration across 3 repeats |
 | **Tail Latency (p95)** | **35,797.9 ms** | **191.4 ms** | Baseline | 95th percentile execution latency |
+
+---
+
+### 3b. Empirical Results: Baseline v1.1 Post-Tier 2 Improvements (Dev Split, 40 Questions)
+- **Evaluation Type**: Re-run of the Day 7 Dev benchmark after Part B improvements (verifier precision, offline substantive sentence extraction, isolated pure Gemini API latency measurement).
+- **Day 7 Frozen Test Split Status**: **NEVER RUN**. The frozen test split (`benchmark_test_frozen_20.json`, SHA-256: `f684b07ab93d12bb65093609fb91272d82f632576c36545017f9f3747fe9415d`) remains 100% untouched and unexecuted.
+- **Raw Result Artifacts**:
+  - `data/benchmarks/dev_baseline_v1_1_no_gemini.json` (Gemini OFF, 3 repeats, delay 0.0s)
+  - `data/benchmarks/dev_baseline_v1_1_gemini_on.json` (Gemini ON, 3 repeats, delay 2.0s)
+
+| Evaluation Metric | Baseline v1.0 (Gemini ON) | Baseline v1.1 (Gemini ON) | Baseline v1.0 (Gemini OFF) | Baseline v1.1 (Gemini OFF) | Target Threshold | Metric Description |
+| :--- | :---: | :---: | :---: | :---: | :---: | :--- |
+| **Overall Accuracy** | 35 / 40 (87.5%) | **36 / 40 (90.0%)** | 37 / 40 (92.5%) | **38 / 40 (95.0%)** | $\ge 85.0\%$ | End-to-end task completion |
+| **Wrong Answers (FN, $eta$-error)** | 0 / 14 (0.0%) | **0 / 14 (0.0%)** | 0 / 14 (0.0%) | **0 / 14 (0.0%)** | **Strictly 0.0%** | Injections / hallucinations leaked (Dangerous) |
+| **Wrong Refusals (FP, $lpha$-error)** | 5 / 26 (19.2%) | **4 / 26 (15.4%)** | 3 / 26 (11.5%) | **2 / 26 (7.7%)** | $\le 20.0\%$ | Legitimate technical queries blocked (Annoying) |
+| **Retrieval Recall@5** | 100.0% | **100.0%** | 100.0% | **100.0%** | $\ge 88.0\%$ | Top-5 ground-truth chunk presence (Answerable only) |
+| **Retrieval MRR** | 0.9615 | **0.9615** | 0.9615 | **0.9615** | $\ge 0.78$ | Mean Reciprocal Rank of first relevant passage |
+| **Value Accuracy (Unit Eq.)** | 25 / 26 (96.2%) | **26 / 26 (100.0%)** | 3 / 26 (11.5%) | **24 / 26 (92.3%)** | $\ge 90.0\%$ | Expected parameter value present with unit mapping |
+| **Citation Precision** | 73.1% | **84.6%** | 88.5% | **92.3%** | $100.0\%$ | Fraction of cited footnotes verified against evidence |
+| **Citation Recall** | 80.8% | **84.6%** | 88.5% | **92.3%** | $\ge 80.0\%$ | Assertions backed by valid cited chunk footnotes |
+| **L1 Groundedness (Self-Check)** | 26 / 26 (100.0%) | **26 / 26 (100.0%)** | 26 / 26 (100.0%) | **26 / 26 (100.0%)** | $100.0\%$ | Internal pipeline verifier pass rate |
+| **Median Latency (p50)** | 12,708.8 ms | **897.3 ms** | 89.4 ms | **105.4 ms** | Baseline | Typical query execution duration across 3 repeats |
+| **Tail Latency (p95)** | 35,797.9 ms | **7,040.0 ms** | 191.4 ms | **208.3 ms** | Baseline | 95th percentile execution latency |
+
+> [!NOTE]
+> **Key Analysis of Baseline v1.1 Gains**:
+> 1. **Offline Value Accuracy surged from 11.5% to 92.3%**: The new substantive sentence extractor in the offline synthesizer extracts parameter defaults and descriptions rather than truncating at section headers.
+> 2. **Gemini ON Value Accuracy reached 100.0% (26/26)**: The decimal and negative number verifier precision fixes eliminated false rejections on values like `-1` and `0.2`.
+> 3. **Latency Instrumentation Cleanliness**: Pure Gemini API call timing is now isolated in the execution ledger (`p50 = 11,226.5 ms` pure API call, isolated from retries and pacing).
+
 
 ---
 
