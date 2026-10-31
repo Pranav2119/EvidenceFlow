@@ -77,3 +77,36 @@ def test_single_setting_chunk_attribute_and_value_verification():
     missing_min, err_min = verify_statement_value_presence(statement_min, chunk_content)
     assert missing_min == []
     assert err_min is None
+
+
+def test_section_numbers_and_preambles_never_extracted_as_claimed_values():
+    """
+    Commit 93d5616 verification: section numbers (e.g. '20.10.', '20.8.2') and documentation
+    citation preambles ('According to PostgreSQL 16 documentation on 20.10. Autovacuum: ...')
+    must NEVER be extracted as claimed parameter values.
+    """
+    # 1. Full preamble with section numbers
+    text_with_preamble = (
+        "According to PostgreSQL 16 documentation on 20.10. Synthetic Tuning: "
+        "The default is 200."
+    )
+    vals = extract_claimed_values(text_with_preamble)
+    assert "20.10" not in vals
+    assert "20.10." not in vals
+    assert vals == ["200"]
+
+    # 2. Section and chapter references in body
+    text_with_section_ref = "In Section 20.8.2, synth_timeout defaults to -1."
+    vals2 = extract_claimed_values(text_with_section_ref)
+    assert "20.8.2" not in vals2
+    assert "20.8" not in vals2
+    assert vals2 == ["-1"]
+
+    # 3. Chapter reference with non-breaking space
+    text_with_nbsp = (
+        "According to PostgreSQL 16 documentation on 18.3.\xa0Server Configuration: "
+        "The default value of synth_limit is 64MB."
+    )
+    vals3 = extract_claimed_values(text_with_nbsp)
+    assert "18.3" not in vals3
+    assert vals3 == ["64mb"]
