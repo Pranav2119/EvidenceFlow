@@ -150,3 +150,14 @@ We evaluated whether activating the Neo4j conversational memory graph resolver d
 | **Tail Latency (p95)** | **158.8 ms** | **263.8 ms** | **+105.0 ms** | Database transaction commit overhead |
 
 - **Conclusion**: Conversational graph memory provides 100% follow-up resolution accuracy with **zero quality or safety regression** on single-turn tasks.
+
+---
+
+### 3. Multi-Turn Holdout Evaluation (External Follow-up Set)
+- **Dataset**: `data/benchmarks/followup_holdout_20.json`
+- **SHA-256**: `a4633e20e6f6631ad19074092b704c0ca9214777a457494ec235213b28b5774a`
+- **Dataset Classification**: AI-drafted by an external assistant, not edited by the repo author; now a development set.
+- **Protocol**: Held-out benchmark evaluated once to surface architectural edge cases, then immediately converted into a development set. Zero test tuning performed against the frozen test split.
+- **Raw Result Artifacts**:
+  - `data/benchmarks/holdout_results_gemini_off.json` (Code under test commit: `d7d5fa8`, Dataset SHA-256: `a4633e20e6f6631ad19074092b704c0ca9214777a457494ec235213b28b5774a`)
+  - `data/benchmarks/holdout_results_gemini_on.json` (Code under test commit: `d7d5fa8`, Dataset SHA-256: `a4633e20e6f6631ad19074092b704c0ca9214777a457494ec235213b28b5774a`)
