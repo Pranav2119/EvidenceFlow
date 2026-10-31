@@ -316,6 +316,54 @@ def get_session_history(thread_id: str) -> List[Dict[str, Any]]:
         return history
 
 
+def safe_substitute_pronoun(query: str, entity_name: str, target_version: Optional[str] = None) -> Optional[str]:
+    """
+    Substitutes anaphoric pronouns with the resolved entity name while preserving
+    the grammatical intent and phrasing of the user's original query.
+    If safe substitution is not possible, returns None to signal a clarifying question.
+    """
+    q = query.strip()
+
+    # 1. Standalone version switch queries: "in v14?", "what about 15?", "in 15?"
+    m_ver_switch = re.match(r"^\s*(?:what\s+about\s+|how\s+about\s+)?(?:in\s+)?v?(14|15|16)\??\s*$", q, re.IGNORECASE)
+    if m_ver_switch:
+        ver = m_ver_switch.group(1)
+        return f"What is the configuration and behavior of {entity_name} in PostgreSQL {ver}?"
+
+    substitutions = [
+        # Multi-word parameter references
+        (r"\b(that\s+setting|the\s+setting|this\s+setting)\b", entity_name),
+        (r"\b(that\s+parameter|the\s+parameter|this\s+parameter)\b", entity_name),
+        (r"\b(that\s+option|the\s+option|this\s+option)\b", entity_name),
+        (r"\b(that\s+value|the\s+value)\b", f"the value of {entity_name}"),
+        # Possessive pronoun
+        (r"\b(its)\b", f"{entity_name}'s"),
+        # Singular pronouns
+        (r"\b(it|that|this)\b", entity_name),
+    ]
+
+    new_q = q
+    replaced = False
+
+    for pattern, replacement in substitutions:
+        if re.search(pattern, new_q, flags=re.IGNORECASE):
+            new_q = re.sub(pattern, replacement, new_q, count=1, flags=re.IGNORECASE)
+            replaced = True
+            break
+
+    if not replaced:
+        return None
+
+    # If rewritten query lacks PostgreSQL version mention and target_version is known, append cleanly
+    if target_version and not re.search(r"\b(?:v|version\s+|postgresql\s+)?(?:14|15|16)\b", new_q, re.IGNORECASE):
+        if new_q.endswith("?"):
+            new_q = f"{new_q[:-1]} in PostgreSQL {target_version}?"
+        else:
+            new_q = f"{new_q} in PostgreSQL {target_version}"
+
+    return new_q
+
+
 def resolve_entity_for_turn(
     thread_id: str,
     follow_up_query: str,
@@ -324,12 +372,13 @@ def resolve_entity_for_turn(
     """
     Resolves multi-turn follow-up queries using graph conversational memory.
 
-    Rules [Req 4]:
+    Rules [Req 4, b, d]:
       1. Explicit setting or version in the new question wins over memory.
-      2. If not a follow-up query, returns status='passthrough' (0 memory modification).
-      3. If the prior turn was a refusal, returns status='ambiguous' with clarifying question.
-      4. If the prior turn discussed multiple entities, returns status='ambiguous' with clarifying question.
-      5. If single entity resolved, returns status='resolved' with rewritten query.
+      2. If turn 2 has no version flag and mentions none, carries version from turn 1.
+      3. Rewrites by safely substituting pronoun with setting name, preserving question text.
+      4. If the prior turn was a refusal, returns status='ambiguous' with clarifying question.
+      5. If the prior turn discussed multiple entities, returns status='ambiguous' with clarifying question.
+      6. If single entity resolved, returns status='resolved' with rewritten query.
 
     Returns Dict with:
       - status: 'resolved' | 'ambiguous' | 'passthrough'
@@ -343,6 +392,32 @@ def resolve_entity_for_turn(
     explicit_setting = extract_explicit_setting(follow_up_query)
     explicit_version = extract_explicit_version(follow_up_query)
 
+    # Query Neo4j for the most recent turn in this thread to get prior version / entities
+    record = None
+    try:
+        with get_neo4j_session() as session:
+            result = session.run(
+                """
+                MATCH (t:Turn {thread_id: $thread_id})
+                WITH t ORDER BY t.turn_number DESC LIMIT 1
+                OPTIONAL MATCH (t)-[:CONCERNS]->(e:Entity)
+                OPTIONAL MATCH (t)-[:HAS_QUESTION]->(q:Question)-[:SCOPED_TO]->(v:Version)
+                RETURN t.id AS turn_id,
+                       t.turn_number AS turn_number,
+                       coalesce(t.is_abstained, false) AS is_abstained,
+                       t.abstention_code AS abstention_code,
+                       v.tag AS prior_version,
+                       collect(DISTINCT e.name) AS entities
+                """,
+                {"thread_id": thread_id},
+            )
+            record = result.single()
+    except Exception as e:
+        logger.warning("Failed to query Neo4j for prior turn: %s", e)
+
+    prior_version = record["prior_version"] if record and record["prior_version"] else "16"
+    target_version = explicit_version or prior_version
+
     # 1. Rule 1: Explicit setting in new question strictly wins over memory
     if explicit_setting is not None:
         latency_ms = (time.perf_counter() - t_start) * 1000.0
@@ -350,7 +425,7 @@ def resolve_entity_for_turn(
             "status": "passthrough",
             "reason": "explicit_setting_in_query",
             "entity_name": explicit_setting,
-            "target_version": explicit_version,
+            "target_version": target_version,
             "rewritten_query": follow_up_query,
             "latency_ms": round(latency_ms, 3),
         }
@@ -362,29 +437,10 @@ def resolve_entity_for_turn(
             "status": "passthrough",
             "reason": "not_a_follow_up",
             "entity_name": None,
-            "target_version": explicit_version,
+            "target_version": target_version,
             "rewritten_query": follow_up_query,
             "latency_ms": round(latency_ms, 3),
         }
-
-    # 3. Query Neo4j for the most recent turn in this thread
-    with get_neo4j_session() as session:
-        result = session.run(
-            """
-            MATCH (t:Turn {thread_id: $thread_id})
-            WITH t ORDER BY t.turn_number DESC LIMIT 1
-            OPTIONAL MATCH (t)-[:CONCERNS]->(e:Entity)
-            OPTIONAL MATCH (t)-[:HAS_QUESTION]->(q:Question)-[:SCOPED_TO]->(v:Version)
-            RETURN t.id AS turn_id,
-                   t.turn_number AS turn_number,
-                   coalesce(t.is_abstained, false) AS is_abstained,
-                   t.abstention_code AS abstention_code,
-                   v.tag AS prior_version,
-                   collect(DISTINCT e.name) AS entities
-            """,
-            {"thread_id": thread_id},
-        )
-        record = result.single()
 
     latency_ms = (time.perf_counter() - t_start) * 1000.0
 
@@ -397,7 +453,7 @@ def resolve_entity_for_turn(
             "latency_ms": round(latency_ms, 3),
         }
 
-    # 4. Rule 3: Prior turn was an abstention / refusal
+    # 3. Rule 3: Prior turn was an abstention / refusal
     if record["is_abstained"]:
         return {
             "status": "ambiguous",
@@ -408,7 +464,7 @@ def resolve_entity_for_turn(
 
     prior_entities = [e for e in record["entities"] if e]
 
-    # 5. Rule 4 & Rule h: Multiple entities in prior turn
+    # 4. Rule 4 & Rule h: Multiple entities in prior turn
     if len(prior_entities) > 1:
         options = " and ".join([f"'{e}'" for e in prior_entities])
         is_plural = any(re.search(pat, follow_up_query.lower()) for pat in [
@@ -416,7 +472,6 @@ def resolve_entity_for_turn(
             r"\b(which of (?:those|these|them)|both of (?:those|these|them))\b",
         ])
         if is_plural:
-            # Under rule h: Plural pronouns ask or resolve to all; never pick one arbitrarily
             return {
                 "status": "ambiguous",
                 "reason": "multiple_entities_plural",
@@ -433,7 +488,7 @@ def resolve_entity_for_turn(
                 "latency_ms": round(latency_ms, 3),
             }
 
-    # 6. No entities recorded on prior turn
+    # 5. No entities recorded on prior turn
     if len(prior_entities) == 0:
         return {
             "status": "ambiguous",
@@ -442,12 +497,18 @@ def resolve_entity_for_turn(
             "latency_ms": round(latency_ms, 3),
         }
 
-    # 7. Rule 5: Exactly one entity resolved!
+    # 6. Rule 5 & Rule b: Exactly one entity resolved, safe grammatical substitution
     resolved_entity = prior_entities[0]
-    target_version = explicit_version or record["prior_version"] or "16"
+    rewritten_query = safe_substitute_pronoun(follow_up_query, resolved_entity, target_version)
 
-    # Construct the canonical self-contained query for downstream pipeline
-    rewritten_query = f"What is the configuration and behavior of {resolved_entity} in PostgreSQL {target_version}?"
+    if not rewritten_query:
+        return {
+            "status": "ambiguous",
+            "reason": "unsafe_substitution",
+            "clarification": f"I couldn't safely resolve which aspect of '{resolved_entity}' you are inquiring about. Could you rephrase your question?",
+            "candidate_entities": [resolved_entity],
+            "latency_ms": round(latency_ms, 3),
+        }
 
     return {
         "status": "resolved",

@@ -54,5 +54,8 @@ def memory_resolver_node(state: EvidenceFlowState) -> Dict[str, Any]:
             "draft_answer": clarification_msg,
         }
 
-    # 'passthrough' status: return empty diff, preserving state
-    return {}
+    # 'passthrough' status: carry target_version if turn 2 lacks one
+    diff = {}
+    if not state.target_version and resolution.get("target_version"):
+        diff["target_version"] = resolution["target_version"]
+    return diff
