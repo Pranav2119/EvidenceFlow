@@ -7,7 +7,7 @@ deterministic passage extraction for offline/zero-cost environments.
 import re
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import httpx
 from evidenceflow.config import get_settings
 from evidenceflow.state import EvidenceFlowState, Citation
@@ -55,21 +55,31 @@ def build_grounded_prompt(query: str, version: str, passages: List[Dict[str, Any
     return prompt
 
 
-def deterministic_fallback_answer(query: str, version: str, passages: List[Dict[str, Any]]) -> str:
+def deterministic_fallback_answer(
+    query: str, version: str, passages: List[Dict[str, Any]]
+) -> Tuple[str, Optional[str]]:
     """
     Zero-LLM deterministic synthesis template.
-    Fails closed: Answers ONLY when the question explicitly names a setting that
-    appears in the retrieved passages; otherwise declares insufficient evidence.
+    Extracts substantive sentences from retrieved chunks answering the user's question.
+    Never outputs only a section header. If substantive evidence is missing,
+    abstains with a clear code [Rule i].
     """
     if not passages:
-        return f"Insufficient evidence in the PostgreSQL {version} documentation."
+        return f"Insufficient evidence in the PostgreSQL {version} documentation.", "NO_SUBSTANTIVE_EVIDENCE"
 
     # Identify recognized setting names mentioned in query
-    from evidenceflow.storage.bm25 import get_bm25_index
+    from evidenceflow.memory.corpus_settings import get_corpus_settings
     try:
-        known_settings = get_bm25_index().setting_names
+        known_settings = get_corpus_settings()
     except Exception:
         known_settings = set()
+
+    if not known_settings:
+        from evidenceflow.storage.bm25 import get_bm25_index
+        try:
+            known_settings = get_bm25_index().setting_names
+        except Exception:
+            known_settings = set()
 
     words = set(re.findall(r"\b[a-z0-9_]+\b", query.lower()))
     named_settings = [w for w in words if w in known_settings or ("_" in w and len(w) > 3)]
@@ -80,7 +90,7 @@ def deterministic_fallback_answer(query: str, version: str, passages: List[Dict[
 
     if not named_settings:
         logger.info("Deterministic fallback: question does not name any indexed setting. Failing closed.")
-        return f"Insufficient evidence in the PostgreSQL {version} documentation."
+        return f"Insufficient evidence in the PostgreSQL {version} documentation.", "NO_SUBSTANTIVE_EVIDENCE"
 
     # Find the best passage that contains one of the named settings
     best_passage = None
@@ -105,17 +115,94 @@ def deterministic_fallback_answer(query: str, version: str, passages: List[Dict[
 
     if not best_passage:
         logger.info("Deterministic fallback: named settings do not appear in retrieved chunks. Failing closed.")
-        return f"Insufficient evidence in the PostgreSQL {version} documentation."
+        return f"Insufficient evidence in the PostgreSQL {version} documentation.", "NO_SUBSTANTIVE_EVIDENCE"
 
     cid = best_passage["chunk_id"]
     section = best_passage.get("section", "Documentation")
     content = best_passage.get("content", "").strip()
 
-    # Extract first 2 sentences or 250 characters
-    sentences = re.split(r"(?<=[.!?])\s+", content)
-    summary = " ".join(sentences[:2]) if sentences else content[:200]
+    # Strip pure leading headers (Section: ..., Parameter: ..., # ...)
+    body = re.sub(
+        r"^(?:Section:[^\n]*\n*|Parameter:[^\n]*\n*|#+[^\n]*\n*)+",
+        "",
+        content,
+        flags=re.IGNORECASE,
+    ).strip()
 
-    return f"According to PostgreSQL {version} documentation on {section}: {summary} [^{cid}]"
+    if not body:
+        return f"Insufficient evidence in the PostgreSQL {version} documentation.", "NO_SUBSTANTIVE_EVIDENCE"
+
+    # Split into clean sentences using verifier's safe splitter [Rule i, j]
+    from evidenceflow.graph.nodes.verifier import split_sentences_safely
+    sentence_tuples = split_sentences_safely(body)
+    raw_sentences = [s.strip() for s, _ in sentence_tuples]
+
+    # Filter out non-substantive lines / section headers
+    substantive = []
+    for s in raw_sentences:
+        if s.lower().startswith(("section:", "parameter:", "###", "##")):
+            continue
+        words = s.split()
+        if len(words) < 4:
+            continue
+        # Must contain at least one verb or substantive technical keyword
+        if not re.search(
+            r"\b(is|are|was|were|sets|specifies|determines|controls|allows|enables|causes|requires|contains|defaults?|default|removed?|deprecated)\b",
+            s,
+            re.IGNORECASE,
+        ):
+            continue
+        substantive.append(s)
+
+    if not substantive:
+        return f"Insufficient evidence in the PostgreSQL {version} documentation.", "NO_SUBSTANTIVE_EVIDENCE"
+
+    q_lower = query.lower()
+    is_default_q = bool(re.search(r"\bdefaults?\b", q_lower))
+    is_remove_q = bool(re.search(r"\b(remove|removed|deprecated|obsolete)\b", q_lower))
+    is_restart_q = bool(re.search(r"\b(restart|reload|postmaster|sighup|superuser|privilege|context)\b", q_lower))
+
+    scored = []
+    for idx, s in enumerate(substantive):
+        score = 0
+        s_lower = s.lower()
+        if is_default_q:
+            if re.search(r"\bdefaults?\b", s_lower):
+                score += 20
+        if is_remove_q:
+            if re.search(r"\b(remove|removed|deprecated)\b", s_lower):
+                score += 20
+        if is_restart_q:
+            if re.search(r"\b(restart|reload|postmaster|sighup|superuser|privilege)\b", s_lower):
+                score += 15
+
+        # Check if setting name appears in this sentence
+        for ns in named_settings:
+            if ns in s_lower or ns.replace("_", " ") in s_lower:
+                score += 5
+
+        # Definition sentence
+        if idx == 0 and re.search(r"\b(sets|specifies|determines|controls|allows|enables|causes)\b", s_lower):
+            score += 5
+
+        scored.append((score, idx, s))
+
+    if is_default_q and not any(score >= 20 for score, _, _ in scored):
+        # Query specifically asked for default, but chunk has no default statement
+        return f"Insufficient evidence in the PostgreSQL {version} documentation.", "NO_SUBSTANTIVE_EVIDENCE"
+
+    if is_remove_q and not any(score >= 20 for score, _, _ in scored):
+        return f"Insufficient evidence in the PostgreSQL {version} documentation.", "NO_SUBSTANTIVE_EVIDENCE"
+
+    scored.sort(key=lambda x: (-x[0], x[1]))
+    best_score, best_idx, best_sent = scored[0]
+
+    # If nothing matched specific intents and it was a specific intent query
+    if best_score == 0 and (is_default_q or is_remove_q or is_restart_q):
+        return f"Insufficient evidence in the PostgreSQL {version} documentation.", "NO_SUBSTANTIVE_EVIDENCE"
+
+    summary = best_sent
+    return f"According to PostgreSQL {version} documentation on {section}: {summary} [^{cid}]", None
 
 
 def extract_citations(answer: str, passages: List[Dict[str, Any]]) -> List[Citation]:
@@ -182,6 +269,7 @@ def answer_writer_node(state: EvidenceFlowState) -> Dict[str, Any]:
             "draft_answer": f"I cannot answer this question because no relevant documentation was found for PostgreSQL {target_version}.",
             "citations": [],
             "is_abstained": True,
+            "abstention_code": "ABSTAINED",
             "abstention_reason": reason,
             "synthesis_mode": "fallback",
             "audit_trail": existing_audit + [audit_entry],
@@ -191,6 +279,9 @@ def answer_writer_node(state: EvidenceFlowState) -> Dict[str, Any]:
     draft_answer = ""
     token_usage: Dict[str, Any] = {}
     synthesis_mode = "fallback"
+    abstention_code: Optional[str] = None
+    is_abstained: bool = False
+    abstention_reason: Optional[str] = None
 
     # D3-1: Check for real API key
     if is_valid_gemini_key(settings.GEMINI_API_KEY):
@@ -229,25 +320,38 @@ def answer_writer_node(state: EvidenceFlowState) -> Dict[str, Any]:
                         "total_tokens": getattr(response.usage_metadata, "total_token_count", 0),
                     }
             else:
-                draft_answer = deterministic_fallback_answer(query, target_version, passages)
+                draft_answer, fallback_code = deterministic_fallback_answer(query, target_version, passages)
                 synthesis_mode = "fallback"
+                if fallback_code:
+                    is_abstained = True
+                    abstention_code = fallback_code
+                    abstention_reason = f"Deterministic fallback could not answer query ({fallback_code})."
 
         # Catch GenAI and network/transport errors (including RemoteProtocolError)
         except (APIError, ClientError, ServerError, ConnectionError, TimeoutError, httpx.HTTPError, Exception) as e:
             logger.warning("Gemini generation API call failed (%s), falling back to deterministic synthesis.", e)
-            draft_answer = deterministic_fallback_answer(query, target_version, passages)
-            synthesis_mode = "fallback" 
+            draft_answer, fallback_code = deterministic_fallback_answer(query, target_version, passages)
+            synthesis_mode = "fallback"
+            if fallback_code:
+                is_abstained = True
+                abstention_code = fallback_code
+                abstention_reason = f"Deterministic fallback could not answer query ({fallback_code})." 
     else:
         logger.info("No active Gemini API key configured. Using deterministic synthesis.")
-        draft_answer = deterministic_fallback_answer(query, target_version, passages)
+        draft_answer, fallback_code = deterministic_fallback_answer(query, target_version, passages)
         synthesis_mode = "fallback"
+        if fallback_code:
+            is_abstained = True
+            abstention_code = fallback_code
+            abstention_reason = f"Deterministic fallback could not answer query ({fallback_code})."
 
-    # Check for LLM abstention statement
-    is_abstained = False
-    abstention_reason = None
+    # Check for LLM or fallback abstention statement
     if "insufficient evidence" in draft_answer.lower():
         is_abstained = True
-        abstention_reason = "Model declared insufficient evidence in retrieved passages."
+        if not abstention_code:
+            abstention_code = "ABSTAINED"
+        if not abstention_reason:
+            abstention_reason = "Model declared insufficient evidence in retrieved passages."
 
     # D3-4: strongly-typed Citation objects
     citations = extract_citations(draft_answer, passages)
@@ -265,6 +369,7 @@ def answer_writer_node(state: EvidenceFlowState) -> Dict[str, Any]:
         "draft_answer": draft_answer,
         "citations": citations,
         "is_abstained": is_abstained,
+        "abstention_code": abstention_code if is_abstained else None,
         "abstention_reason": abstention_reason,
         "synthesis_mode": synthesis_mode,
         "audit_trail": existing_audit + [audit_entry],
