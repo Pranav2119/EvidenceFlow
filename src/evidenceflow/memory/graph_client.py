@@ -18,7 +18,7 @@ import time
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 from evidenceflow.memory.connection import get_neo4j_session
-from evidenceflow.memory.corpus_settings import get_corpus_settings
+from evidenceflow.memory.corpus_settings import get_corpus_settings, has_off_corpus_content_words
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +114,11 @@ def is_follow_up_query(query: str) -> bool:
 
     # Check for false-trigger grammatical phrases like "setting that controls"
     if any(re.search(pat, q) for pat in EXPLICIT_NON_FOLLOWUP_PATTERNS):
+        return False
+
+    # Item 4: A pronoun follow-up must be shaped like a question about a setting.
+    # If turn 2 has content words outside corpus vocabulary (e.g. joke, funny, capital), do not rewrite.
+    if has_off_corpus_content_words(q):
         return False
 
     # Check for genuine pronoun / version-switch follow-ups
