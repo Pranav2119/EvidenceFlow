@@ -18,24 +18,37 @@ import time
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 from evidenceflow.memory.connection import get_neo4j_session
+from evidenceflow.memory.corpus_settings import get_corpus_settings
 
 logger = logging.getLogger(__name__)
 
-# Known PostgreSQL GUC configuration parameters indexed in our corpus
-# Used to determine if the user's new question explicitly names a real setting
-KNOWN_POSTGRES_SETTINGS = {
-    "wal_compression", "max_connections", "shared_buffers", "work_mem",
-    "maintenance_work_mem", "checkpoint_timeout", "max_wal_size", "min_wal_size",
-    "checkpoint_completion_target", "autovacuum_naptime", "autovacuum_max_workers",
-    "autovacuum_vacuum_cost_limit", "autovacuum_vacuum_cost_delay", "log_min_duration_statement",
-    "log_checkpoints", "log_connections", "log_disconnections", "archive_mode",
-    "archive_command", "archive_timeout", "vacuum_buffer_usage_limit",
-    "vacuum_defer_cleanup_age", "ignore_system_indexes", "zero_damaged_pages",
-    "fsync", "synchronous_commit", "wal_level", "max_worker_processes",
-    "max_parallel_workers", "max_parallel_maintenance_workers", "deadlock_timeout",
-    "statement_timeout", "lock_timeout", "idle_in_transaction_session_timeout",
-    "track_io_timing", "track_activities", "track_counts", "listen_addresses", "port",
-}
+
+def extract_all_explicit_settings(query: str) -> List[str]:
+    """
+    Extracts all known PostgreSQL configuration settings explicitly named in the query.
+    Matches against setting names discovered dynamically from the indexed corpus.
+    Sorts candidate settings by length descending to ensure longer compound names take precedence.
+    """
+    q = query.lower()
+    corpus_settings = get_corpus_settings()
+    found: List[str] = []
+    # Match longer names first
+    for setting in sorted(corpus_settings, key=len, reverse=True):
+        pattern = r"\b" + re.escape(setting) + r"\b"
+        if re.search(pattern, q):
+            # Avoid adding sub-tokens if already covered by longer parameter
+            if not any(setting in existing for existing in found):
+                found.append(setting)
+    return found
+
+
+def extract_explicit_setting(query: str) -> Optional[str]:
+    """
+    Checks if the user query explicitly names a known technical setting.
+    If found, the explicit setting strictly wins over conversational memory.
+    """
+    settings = extract_all_explicit_settings(query)
+    return settings[0] if settings else None
 
 # Pronoun patterns that trigger follow-up resolution when NO explicit parameter is mentioned
 FOLLOW_UP_PRONOUN_PATTERNS = [
@@ -51,18 +64,6 @@ EXPLICIT_NON_FOLLOWUP_PATTERNS = [
     r"\b(setting that controls|parameter that defines|option that sets)\b",
 ]
 
-
-def extract_explicit_setting(query: str) -> Optional[str]:
-    """
-    Checks if the user query explicitly names a known technical setting.
-    If found, the explicit setting strictly wins over conversational memory.
-    """
-    q = query.lower()
-    for setting in KNOWN_POSTGRES_SETTINGS:
-        pattern = r"\b" + re.escape(setting) + r"\b"
-        if re.search(pattern, q):
-            return setting
-    return None
 
 
 def extract_explicit_version(query: str) -> Optional[str]:
