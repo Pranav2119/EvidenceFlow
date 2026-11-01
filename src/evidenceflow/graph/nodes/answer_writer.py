@@ -178,9 +178,9 @@ def deterministic_fallback_answer(
     q_lower = query.lower()
     is_restart_q = bool(re.search(r"\b(restart|reload|postmaster|sighup)\b", q_lower))
     is_per_table_q = bool(re.search(r"\b(per[\s-]table|table[\s-]level|per[\s-]database|relation)\b", q_lower))
-    is_default_q = bool(re.search(r"\b(defaults?|same)\b", q_lower))
+    is_default_q = bool(re.search(r"\b(defaults?|default\s+value|same)\b", q_lower))
     is_remove_q = bool(re.search(r"\b(remove|removed|deprecated|obsolete)\b", q_lower))
-    is_change_q = bool(re.search(r"\b(change|changed|changing|modify|runtime|dynamically)\b", q_lower)) and not is_restart_q and not is_per_table_q
+    is_change_q = bool(re.search(r"\b(who\s+can\s+change|can\s+i\s+change|change|changed|changing|modify|runtime|dynamically)\b", q_lower)) and not is_restart_q and not is_per_table_q
 
     has_specific_attribute = is_restart_q or is_per_table_q or is_default_q or is_remove_q or is_change_q
 
@@ -192,7 +192,7 @@ def deterministic_fallback_answer(
             score += 25
         if is_per_table_q and re.search(r"\b(per[\s-]table|table|tables|relation|relations)\b", s_lower):
             score += 25
-        if is_default_q and re.search(r"\b(defaults?|default\s+is|is\s+on\b|is\s+off\b)\b", s_lower):
+        if is_default_q and re.search(r"\b(defaults?|default\s+value|default\s+is|is\s+the\s+default|defaults\s+to|is\s+on\b|is\s+off\b)\b", s_lower):
             score += 25
         if is_remove_q and re.search(r"\b(removed?|deprecated|obsolete)\b", s_lower):
             score += 25
@@ -204,13 +204,13 @@ def deterministic_fallback_answer(
             if ns in s_lower or ns.replace("_", " ") in s_lower:
                 score += 5
 
-        # Item 6: Do not count a generic definition as an answer when a specific attribute was asked
-        if not has_specific_attribute and idx == 0 and re.search(r"\b(sets|specifies|determines|controls|allows|enables|causes)\b", s_lower):
-            score += 10
+        # Plain "What is X" gets definition sentence (idx 0)
+        if not has_specific_attribute and idx == 0 and re.search(r"\b(sets|specifies|determines|controls|allows|enables|causes|is|are)\b", s_lower):
+            score += 15
 
         scored.append((score, idx, s))
 
-    # Item 6: If an attribute was asked, but no sentence matched that attribute, fail closed
+    # If an attribute was asked, but no sentence matched that attribute, fail closed
     if has_specific_attribute:
         matching_scores = [score for score, _, _ in scored if score >= 25]
         if not matching_scores:
@@ -225,10 +225,16 @@ def deterministic_fallback_answer(
     scored.sort(key=lambda x: (-x[0], x[1]))
     best_score, best_idx, best_sent = scored[0]
 
+    # Clean numbered breadcrumbs from answer text (strip digits.digits codes e.g. '20.4. Resource Consumption' -> 'Resource Consumption')
+    clean_section = re.sub(r"\b(?:[A-Z]\.)?\d+(?:\.\d+)*\.?\s*", "", section).strip()
+    clean_section = re.sub(r"\s*>\s*", " > ", clean_section).strip()
+    if not clean_section:
+        clean_section = "Documentation"
+
     summary = best_sent
     setting_label = named_settings[0] if named_settings else "the parameter"
     return FallbackAnswer(
-        f"In PostgreSQL {version}, {setting_label} is documented under {section}.\n\n{summary} [^{cid}]",
+        f"In PostgreSQL {version}, {setting_label} is documented under {clean_section}.\n\n{summary} [^{cid}]",
         None,
     )
 
