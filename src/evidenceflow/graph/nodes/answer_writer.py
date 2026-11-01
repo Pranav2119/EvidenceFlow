@@ -165,7 +165,7 @@ def deterministic_fallback_answer(
             continue
         # Must contain at least one verb or substantive technical keyword
         if not re.search(
-            r"\b(is|are|was|were|sets|specifies|determines|controls|allows|enables|causes|requires|contains|defaults?|default|removed?|deprecated)\b",
+            r"\b(is|are|was|were|sets?|specifies|determines|controls|allows|enables|causes|requires?|contains|defaults?|default|removed?|deprecated|can|cannot|changed?|change|restart|reloaded?|reload|set|configured?|configure|table)\b",
             s,
             re.IGNORECASE,
         ):
@@ -176,48 +176,54 @@ def deterministic_fallback_answer(
         return FallbackAnswer(f"Insufficient evidence in the PostgreSQL {version} documentation.", "NO_SUBSTANTIVE_EVIDENCE")
 
     q_lower = query.lower()
-    is_default_q = bool(re.search(r"\bdefaults?\b", q_lower))
+    is_restart_q = bool(re.search(r"\b(restart|reload|postmaster|sighup)\b", q_lower))
+    is_per_table_q = bool(re.search(r"\b(per[\s-]table|table[\s-]level|per[\s-]database|relation)\b", q_lower))
+    is_default_q = bool(re.search(r"\b(defaults?|same)\b", q_lower))
     is_remove_q = bool(re.search(r"\b(remove|removed|deprecated|obsolete)\b", q_lower))
-    is_restart_q = bool(re.search(r"\b(restart|reload|postmaster|sighup|superuser|privilege|context)\b", q_lower))
+    is_change_q = bool(re.search(r"\b(change|changed|changing|modify|runtime|dynamically)\b", q_lower)) and not is_restart_q and not is_per_table_q
+
+    has_specific_attribute = is_restart_q or is_per_table_q or is_default_q or is_remove_q or is_change_q
 
     scored = []
     for idx, s in enumerate(substantive):
         score = 0
         s_lower = s.lower()
-        if is_default_q:
-            if re.search(r"\bdefaults?\b", s_lower):
-                score += 20
-        if is_remove_q:
-            if re.search(r"\b(remove|removed|deprecated)\b", s_lower):
-                score += 20
-        if is_restart_q:
-            if re.search(r"\b(restart|reload|postmaster|sighup|superuser|privilege)\b", s_lower):
-                score += 15
+        if is_restart_q and re.search(r"\b(restart|reload|postmaster|sighup|server\s+restart|configuration\s+file)\b", s_lower):
+            score += 25
+        if is_per_table_q and re.search(r"\b(per[\s-]table|table|tables|relation|relations)\b", s_lower):
+            score += 25
+        if is_default_q and re.search(r"\b(defaults?|default\s+is|is\s+on\b|is\s+off\b)\b", s_lower):
+            score += 25
+        if is_remove_q and re.search(r"\b(removed?|deprecated|obsolete)\b", s_lower):
+            score += 25
+        if is_change_q and re.search(r"\b(can\s+be\s+changed|cannot\s+be\s+changed|changed|set|context|superuser|session|runtime|reset)\b", s_lower):
+            score += 25
 
         # Check if setting name appears in this sentence
         for ns in named_settings:
             if ns in s_lower or ns.replace("_", " ") in s_lower:
                 score += 5
 
-        # Definition sentence
-        if idx == 0 and re.search(r"\b(sets|specifies|determines|controls|allows|enables|causes)\b", s_lower):
-            score += 5
+        # Item 6: Do not count a generic definition as an answer when a specific attribute was asked
+        if not has_specific_attribute and idx == 0 and re.search(r"\b(sets|specifies|determines|controls|allows|enables|causes)\b", s_lower):
+            score += 10
 
         scored.append((score, idx, s))
 
-    if is_default_q and not any(score >= 20 for score, _, _ in scored):
-        # Query specifically asked for default, but chunk has no default statement
-        return FallbackAnswer(f"Insufficient evidence in the PostgreSQL {version} documentation.", "NO_SUBSTANTIVE_EVIDENCE")
-
-    if is_remove_q and not any(score >= 20 for score, _, _ in scored):
-        return FallbackAnswer(f"Insufficient evidence in the PostgreSQL {version} documentation.", "NO_SUBSTANTIVE_EVIDENCE")
+    # Item 6: If an attribute was asked, but no sentence matched that attribute, fail closed
+    if has_specific_attribute:
+        matching_scores = [score for score, _, _ in scored if score >= 25]
+        if not matching_scores:
+            attr_name = "restart" if is_restart_q else ("per-table" if is_per_table_q else ("default" if is_default_q else ("removal" if is_remove_q else "change")))
+            setting_name = named_settings[0] if named_settings else "the setting"
+            logger.info("Deterministic fallback: asked attribute '%s' not found in substantive sentences. Abstaining.", attr_name)
+            return FallbackAnswer(
+                f"Documentation for PostgreSQL {version} does not specify {attr_name} behavior for {setting_name}.",
+                "ATTRIBUTE_NOT_SPECIFIED",
+            )
 
     scored.sort(key=lambda x: (-x[0], x[1]))
     best_score, best_idx, best_sent = scored[0]
-
-    # If nothing matched specific intents and it was a specific intent query
-    if best_score == 0 and (is_default_q or is_remove_q or is_restart_q):
-        return FallbackAnswer(f"Insufficient evidence in the PostgreSQL {version} documentation.", "NO_SUBSTANTIVE_EVIDENCE")
 
     summary = best_sent
     setting_label = named_settings[0] if named_settings else "the parameter"
