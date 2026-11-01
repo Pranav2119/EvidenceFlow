@@ -86,10 +86,19 @@ def extract_claimed_values(statement: str) -> List[str]:
     Extracts numeric quantities and configuration enum values from a claim statement.
     Does NOT extract everyday words ('true', 'yes', 'off' in prose) as claimed values.
     Only extracts boolean/state values when tied to a parameter name or 'default is' patterns [Rule f, j].
+    Strips citation preambles and section references (e.g. 20.5., 20.10., E.16.2.) before extraction.
     """
-    # Strip citation preamble and section numbers (e.g. '20.10. Autovacuum')
+    # Strip citation preamble, breadcrumbs, and section numbers
     stmt_clean = re.sub(r"^According to PostgreSQL \d+ documentation on [^:]+:\s*", "", statement, flags=re.IGNORECASE)
-    stmt_clean = re.sub(r"\b(?:section|chapter)\s+\d+(?:\.\d+)*\b", "", stmt_clean, flags=re.IGNORECASE)
+    stmt_clean = re.sub(r"^In PostgreSQL \d+, [^:]+ is documented under [^.\n]+(?:\.|\n)+", "", stmt_clean, flags=re.IGNORECASE)
+    stmt_clean = re.sub(r"\b(?:section|chapter)\s+[A-Za-z0-9.]+\b\.?", "", stmt_clean, flags=re.IGNORECASE)
+    # Strip section references (digits.digits with optional trailing dot, e.g. 20.5., 20.10., E.16.2.)
+    # 1. Letter prefixed like E.16.2.
+    stmt_clean = re.sub(r"\b[A-Za-z]\.\d+(?:\.\d+)*\.?", "", stmt_clean)
+    # 2. Multi-part sections like 20.4.1. or 20.5.2.
+    stmt_clean = re.sub(r"\b\d+\.\d+\.\d+(?:\.\d+)*\.?", "", stmt_clean)
+    # 3. Chapter >= 10 sections like 20.5. or 20.10. (with or without trailing dot)
+    stmt_clean = re.sub(r"\b\d{2,}\.\d+\.?(?!\s*(?:mb|kb|gb|tb|ms|s|min|pages|bytes|rows|%))", "", stmt_clean, flags=re.IGNORECASE)
     stmt_lower = stmt_clean.lower()
     filtered = []
 
@@ -262,17 +271,48 @@ def verify_statement_value_presence(
     # Extract any snake_case parameter names present in the statement
     stmt_params = re.findall(r"\b[a-z][a-z0-9]*_[a-z0-9_]+\b", statement.lower())
 
-    # Determine attribute from statement (ignoring setting names with underscores)
-    stmt_clean = re.sub(r"\b[a-z][a-z0-9]*_[a-z0-9_]+\b", "", statement.lower())
-    attr = None
-    if re.search(r"\bdefaults?\b", stmt_clean):
-        attr = "default"
-    elif re.search(r"\bmaximum\b|\bmax\b|\bupper\b", stmt_clean):
-        attr = "maximum"
-    elif re.search(r"\bminimum\b|\bmin\b|\blower\b", stmt_clean):
-        attr = "minimum"
-    elif re.search(r"\brange\b|\bbetween\b", stmt_clean):
-        attr = "range"
+    # Bind each claimed value to the nearest attribute word in its own clause
+    raw_clauses = re.split(r"[,;]|\b(?:and|but|while|whereas)\b", statement, flags=re.IGNORECASE)
+    attr_keywords = {
+        "default": [r"\bdefaults?\b"],
+        "maximum": [r"\bmaximum\b", r"\bmax\b", r"\bupper\s+limit\b", r"\bupper\b"],
+        "minimum": [r"\bminimum\b", r"\bmin\b", r"\blower\s+limit\b", r"\blower\b"],
+        "range": [r"\brange\b", r"\bbetween\b", r"\bvalid\s+range\b"],
+    }
+    val_to_attr = {}
+    for val in claimed_values:
+        val_clean = val.lower().strip()
+        equivs = get_equivalent_quantities(val_clean)
+        equivs_norm = {normalize_text(e) for e in equivs}
+        bound_attr = None
+        for clause in raw_clauses:
+            clause_norm = normalize_text(clause)
+            has_val = any(e in clause_norm or re.search(r"\b" + re.escape(e) + r"\b", clause_norm) for e in equivs_norm)
+            if not has_val:
+                m_dig = re.search(r"\d+", val_clean)
+                if m_dig and re.search(r"\b" + m_dig.group(0) + r"\b", clause_norm):
+                    has_val = True
+            if has_val:
+                for attr_name, patterns in attr_keywords.items():
+                    if any(re.search(pat, clause_norm) for pat in patterns):
+                        bound_attr = attr_name
+                        break
+                if bound_attr:
+                    break
+        if not bound_attr:
+            stmt_norm = normalize_text(statement)
+            best_dist = float("inf")
+            for attr_name, patterns in attr_keywords.items():
+                for pat in patterns:
+                    for m_attr in re.finditer(pat, stmt_norm):
+                        m_dig = re.search(r"\d+", val_clean)
+                        if m_dig:
+                            for m_val in re.finditer(r"\b" + m_dig.group(0) + r"\b", stmt_norm):
+                                dist = abs(m_val.start() - m_attr.start())
+                                if dist < best_dist:
+                                    best_dist = dist
+                                    bound_attr = attr_name
+        val_to_attr[val] = bound_attr
 
     # Find all setting parameter positions in the chunk
     chunk_params = []
@@ -338,16 +378,17 @@ def verify_statement_value_presence(
                         f"Value '{val}' appears in passage, but belongs to setting '{active_p_found}', not '{target_p}'.",
                     )
 
-        # If statement asserted an attribute (e.g. default / max / min / range),
+        # If value is bound to an attribute (e.g. default / max / min / range),
         # verify that at least one sentence containing the value contains that attribute
-        if attr:
+        val_attr = val_to_attr.get(val)
+        if val_attr:
             attr_patterns = {
                 "default": [r"\bdefaults?\b"],
                 "maximum": [r"\bmaximum\b", r"\bmax\b", r"\bupper\s+limit\b"],
                 "minimum": [r"\bminimum\b", r"\bmin\b", r"\blower\s+limit\b"],
                 "range": [r"\brange\b", r"\bbetween\b", r"\bto\b"],
             }
-            patterns = attr_patterns[attr]
+            patterns = attr_patterns[val_attr]
             attr_matched = any(
                 any(re.search(pat, norm_s) for pat in patterns)
                 for _, norm_s, _ in matching_sentences
@@ -355,7 +396,7 @@ def verify_statement_value_presence(
             if not attr_matched:
                 return (
                     [val],
-                    f"Value '{val}' appears in passage, but does not match claimed attribute '{attr}'.",
+                    f"Value '{val}' appears in passage, but does not match claimed attribute '{val_attr}'.",
                 )
 
     if missing_values:
