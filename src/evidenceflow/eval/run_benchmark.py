@@ -163,6 +163,7 @@ def run_benchmark(
         )
 
         timed_latencies = []
+        repeat_details = []
         for r in range(repeats):
             if gemini_enabled and delay_seconds > 0:
                 time.sleep(delay_seconds)
@@ -178,7 +179,24 @@ def run_benchmark(
             t_end = time.perf_counter()
             duration_ms = (t_end - t_start) * 1000.0
             timed_latencies.append(duration_ms)
+
+            rep_mode = "unknown"
+            for entry in getattr(exec_state, "audit_trail", []):
+                if entry.get("node") == "answer_writer":
+                    rep_mode = entry.get("synthesis_mode", "unknown")
+                    break
+
+            repeat_details.append({
+                "repeat": r,
+                "latency_ms": round(duration_ms, 2),
+                "is_abstained": exec_state.is_abstained,
+                "abstention_code": exec_state.abstention_code,
+                "synthesis_mode": rep_mode,
+            })
             final_state = exec_state
+
+        is_stable = (len(set(rep["is_abstained"] for rep in repeat_details)) <= 1)
+        used_fallback = any(rep["synthesis_mode"] == "fallback" for rep in repeat_details)
 
         measured_latencies_all.extend(timed_latencies)
         median_lat = calculate_percentiles(timed_latencies, [50])[50]
@@ -263,6 +281,9 @@ def run_benchmark(
             "abstention_code": abstention_code,
             "abstention_reason": abstention_reason,
             "error_class": error_class,
+            "repeat_details": repeat_details,
+            "is_stable": is_stable,
+            "used_fallback": used_fallback,
             "latencies_ms": timed_latencies,
             "median_latency_ms": median_lat,
             "recall_at_5": q_recall,
@@ -281,6 +302,15 @@ def run_benchmark(
     # -----------------------------------------------------------------
     # Aggregate Metrics Calculation
     # -----------------------------------------------------------------
+    answered_latencies = [
+        q["median_latency_ms"]
+        for q in question_results
+        if not q["is_abstained"]
+    ]
+    answered_p50 = calculate_percentiles(answered_latencies, [50])[50] if answered_latencies else 0.0
+    answered_p95 = calculate_percentiles(answered_latencies, [95])[95] if answered_latencies else 0.0
+    questions_flipped = [q["id"] for q in question_results if not q.get("is_stable", True)]
+    fallback_questions = [q["id"] for q in question_results if q.get("used_fallback", False)]
     overall_correct = len(correct_answers) + len(correct_refusals)
     overall_acc_pct = (overall_correct / total_q) * 100.0 if total_q else 0.0
 
@@ -338,6 +368,13 @@ def run_benchmark(
             "l1_self_check_pct": round(l1_pct, 2),
             "latency_median_ms": round(lat_percentiles[50], 1),
             "latency_p95_ms": round(lat_percentiles[95], 1),
+            "answered_count": len(answered_latencies),
+            "answered_latency_median_ms": round(answered_p50, 1),
+            "answered_latency_p95_ms": round(answered_p95, 1),
+            "flipped_questions_count": len(questions_flipped),
+            "flipped_questions": questions_flipped,
+            "fallback_questions_count": len(fallback_questions),
+            "fallback_questions": fallback_questions,
         },
         "question_results": question_results,
     }
