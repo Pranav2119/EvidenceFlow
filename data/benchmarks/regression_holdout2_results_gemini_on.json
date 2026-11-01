@@ -1,0 +1,902 @@
+{
+  "dataset_file": "data/benchmarks/followup_holdout2_20.json",
+  "dataset_sha256": "7982fd1fae22f586261bb94959dc15e371ec12edf9a1bd37c106a87c52902598",
+  "git_commit": "b358512a74bfd85149a131418687e2846f3e6325",
+  "mode": "Gemini ON (Live LLM)",
+  "gemini_enabled": true,
+  "total_cases": 20,
+  "fallback_count": 0,
+  "resolution_accuracy_count": 20,
+  "resolution_accuracy_pct": 100.0,
+  "false_triggers_count": 0,
+  "passthrough_denominator": 4,
+  "false_triggers_pct": 0.0,
+  "e2e_correct_count": 20,
+  "e2e_correct_pct": 100.0,
+  "category_breakdown": {
+    "explicit_setting_wins": {
+      "total": 1,
+      "res_pass": 1,
+      "res_pct": 100.0,
+      "false_triggers": 0,
+      "passthrough_total": 1,
+      "e2e_pass": 1,
+      "e2e_pct": 100.0
+    },
+    "explicit_version_wins": {
+      "total": 1,
+      "res_pass": 1,
+      "res_pct": 100.0,
+      "false_triggers": 0,
+      "passthrough_total": 1,
+      "e2e_pass": 1,
+      "e2e_pct": 100.0
+    },
+    "follow_up_no_pronoun": {
+      "total": 1,
+      "res_pass": 1,
+      "res_pct": 100.0,
+      "false_triggers": 0,
+      "passthrough_total": 0,
+      "e2e_pass": 1,
+      "e2e_pct": 100.0
+    },
+    "follow_up_no_pronoun_missing": {
+      "total": 1,
+      "res_pass": 1,
+      "res_pct": 100.0,
+      "false_triggers": 0,
+      "passthrough_total": 0,
+      "e2e_pass": 1,
+      "e2e_pct": 100.0
+    },
+    "followup_after_injection": {
+      "total": 1,
+      "res_pass": 1,
+      "res_pct": 100.0,
+      "false_triggers": 0,
+      "passthrough_total": 0,
+      "e2e_pass": 1,
+      "e2e_pct": 100.0
+    },
+    "followup_after_refusal": {
+      "total": 1,
+      "res_pass": 1,
+      "res_pct": 100.0,
+      "false_triggers": 0,
+      "passthrough_total": 0,
+      "e2e_pass": 1,
+      "e2e_pct": 100.0
+    },
+    "plural_pronoun": {
+      "total": 1,
+      "res_pass": 1,
+      "res_pct": 100.0,
+      "false_triggers": 0,
+      "passthrough_total": 0,
+      "e2e_pass": 1,
+      "e2e_pct": 100.0
+    },
+    "plural_pronoun_which_one": {
+      "total": 1,
+      "res_pass": 1,
+      "res_pct": 100.0,
+      "false_triggers": 0,
+      "passthrough_total": 0,
+      "e2e_pass": 1,
+      "e2e_pct": 100.0
+    },
+    "possessive_plus_version_change": {
+      "total": 1,
+      "res_pass": 1,
+      "res_pct": 100.0,
+      "false_triggers": 0,
+      "passthrough_total": 0,
+      "e2e_pass": 1,
+      "e2e_pct": 100.0
+    },
+    "possessive_version_same": {
+      "total": 1,
+      "res_pass": 1,
+      "res_pct": 100.0,
+      "false_triggers": 0,
+      "passthrough_total": 0,
+      "e2e_pass": 1,
+      "e2e_pct": 100.0
+    },
+    "pronoun_plus_unsupported_version": {
+      "total": 1,
+      "res_pass": 1,
+      "res_pct": 100.0,
+      "false_triggers": 0,
+      "passthrough_total": 0,
+      "e2e_pass": 1,
+      "e2e_pct": 100.0
+    },
+    "pronoun_resolves": {
+      "total": 3,
+      "res_pass": 3,
+      "res_pct": 100.0,
+      "false_triggers": 0,
+      "passthrough_total": 0,
+      "e2e_pass": 3,
+      "e2e_pct": 100.0
+    },
+    "pronoun_version_carry": {
+      "total": 1,
+      "res_pass": 1,
+      "res_pct": 100.0,
+      "false_triggers": 0,
+      "passthrough_total": 0,
+      "e2e_pass": 1,
+      "e2e_pct": 100.0
+    },
+    "pronoun_word_not_followup": {
+      "total": 1,
+      "res_pass": 1,
+      "res_pct": 100.0,
+      "false_triggers": 0,
+      "passthrough_total": 1,
+      "e2e_pass": 1,
+      "e2e_pct": 100.0
+    },
+    "pronoun_word_offtopic": {
+      "total": 1,
+      "res_pass": 1,
+      "res_pct": 100.0,
+      "false_triggers": 0,
+      "passthrough_total": 1,
+      "e2e_pass": 1,
+      "e2e_pct": 100.0
+    },
+    "short_legit_followup": {
+      "total": 2,
+      "res_pass": 2,
+      "res_pct": 100.0,
+      "false_triggers": 0,
+      "passthrough_total": 0,
+      "e2e_pass": 2,
+      "e2e_pct": 100.0
+    },
+    "version_switch_missing": {
+      "total": 1,
+      "res_pass": 1,
+      "res_pct": 100.0,
+      "false_triggers": 0,
+      "passthrough_total": 0,
+      "e2e_pass": 1,
+      "e2e_pct": 100.0
+    }
+  },
+  "rows": [
+    {
+      "id": "g01",
+      "category": "possessive_plus_version_change",
+      "exp_res": {
+        "status": "resolved",
+        "setting": "wal_keep_size",
+        "version": "16"
+      },
+      "act_res": {
+        "status": "resolved",
+        "setting": "wal_keep_size",
+        "version": "16"
+      },
+      "rewritten_query": "What is wal_keep_size's default in 16?",
+      "resolution_pass": true,
+      "is_false_trigger": false,
+      "exp_outcome": "answer",
+      "act_outcome": "answer",
+      "act_code": null,
+      "values_found": [
+        "0"
+      ],
+      "expected_values": [
+        "0"
+      ],
+      "synthesis_mode": "llm",
+      "fell_back_to_offline": false,
+      "header_only": false,
+      "citations": [
+        "pg16-runtime-config-replication-wal-keep-size"
+      ],
+      "draft_answer_preview": "The default value of `wal_keep_size` in PostgreSQL 16 is zero [^pg16-runtime-config-replication-wal-keep-size].",
+      "e2e_pass": true,
+      "notes": "Possessive 'its' plus an explicit new version."
+    },
+    {
+      "id": "g02",
+      "category": "pronoun_resolves",
+      "exp_res": {
+        "status": "resolved",
+        "setting": "superuser_reserved_connections",
+        "version": "16"
+      },
+      "act_res": {
+        "status": "resolved",
+        "setting": "superuser_reserved_connections",
+        "version": "16"
+      },
+      "rewritten_query": "Does superuser_reserved_connections need a server restart in PostgreSQL 16?",
+      "resolution_pass": true,
+      "is_false_trigger": false,
+      "exp_outcome": "answer",
+      "act_outcome": "answer",
+      "act_code": null,
+      "values_found": [],
+      "expected_values": [],
+      "synthesis_mode": "llm",
+      "fell_back_to_offline": false,
+      "header_only": false,
+      "citations": [
+        "pg16-runtime-config-connection-superuser-reserved-connections"
+      ],
+      "draft_answer_preview": "Yes, `superuser_reserved_connections` can only be set at server start, which means it requires a server restart [^pg16-r...",
+      "e2e_pass": true,
+      "notes": "The rewrite must keep the restart question (not become a generic 'configuration and behavior' question). Docs say server start only."
+    },
+    {
+      "id": "g03",
+      "category": "pronoun_version_carry",
+      "exp_res": {
+        "status": "resolved",
+        "setting": "full_page_writes",
+        "version": "14"
+      },
+      "act_res": {
+        "status": "resolved",
+        "setting": "full_page_writes",
+        "version": "14"
+      },
+      "rewritten_query": "What is the default of full_page_writes in PostgreSQL 14?",
+      "resolution_pass": true,
+      "is_false_trigger": false,
+      "exp_outcome": "answer",
+      "act_outcome": "answer",
+      "act_code": null,
+      "values_found": [
+        "on"
+      ],
+      "expected_values": [
+        "on"
+      ],
+      "synthesis_mode": "llm",
+      "fell_back_to_offline": false,
+      "header_only": false,
+      "citations": [
+        "pg14-runtime-config-wal-full-page-writes"
+      ],
+      "draft_answer_preview": "The default value of `full_page_writes` in PostgreSQL 14 is `on` [^pg14-runtime-config-wal-full-page-writes].",
+      "e2e_pass": true,
+      "notes": "No version in turn 2: it must carry over 14, not fall back to 16. Answer must cite a pg14 chunk."
+    },
+    {
+      "id": "g04",
+      "category": "pronoun_resolves",
+      "exp_res": {
+        "status": "resolved",
+        "setting": "log_lock_waits",
+        "version": "16"
+      },
+      "act_res": {
+        "status": "resolved",
+        "setting": "log_lock_waits",
+        "version": "16"
+      },
+      "rewritten_query": "Is log_lock_waits on or off by default in PostgreSQL 16?",
+      "resolution_pass": true,
+      "is_false_trigger": false,
+      "exp_outcome": "answer",
+      "act_outcome": "answer",
+      "act_code": null,
+      "values_found": [
+        "off"
+      ],
+      "expected_values": [
+        "off"
+      ],
+      "synthesis_mode": "llm",
+      "fell_back_to_offline": false,
+      "header_only": false,
+      "citations": [
+        "pg16-runtime-config-logging-log-lock-waits"
+      ],
+      "draft_answer_preview": "In PostgreSQL 16, `log_lock_waits` is off by default [^pg16-runtime-config-logging-log-lock-waits].",
+      "e2e_pass": true,
+      "notes": "Boolean value: 'off' must be found in the real default sentence, not in prose."
+    },
+    {
+      "id": "g05",
+      "category": "pronoun_resolves",
+      "exp_res": {
+        "status": "resolved",
+        "setting": "temp_file_limit",
+        "version": "15"
+      },
+      "act_res": {
+        "status": "resolved",
+        "setting": "temp_file_limit",
+        "version": "15"
+      },
+      "rewritten_query": "What value means no limit for temp_file_limit in PostgreSQL 15?",
+      "resolution_pass": true,
+      "is_false_trigger": false,
+      "exp_outcome": "answer",
+      "act_outcome": "answer",
+      "act_code": null,
+      "values_found": [
+        "-1"
+      ],
+      "expected_values": [
+        "-1"
+      ],
+      "synthesis_mode": "llm",
+      "fell_back_to_offline": false,
+      "header_only": false,
+      "citations": [
+        "pg15-runtime-config-resource-temp-file-limit"
+      ],
+      "draft_answer_preview": "In PostgreSQL 15, a value of -1 means no limit for `temp_file_limit` [^pg15-runtime-config-resource-temp-file-limit].",
+      "e2e_pass": true,
+      "notes": "Negative number."
+    },
+    {
+      "id": "g06",
+      "category": "version_switch_missing",
+      "exp_res": {
+        "status": "resolved",
+        "setting": "recovery_prefetch",
+        "version": "14"
+      },
+      "act_res": {
+        "status": "resolved",
+        "setting": "recovery_prefetch",
+        "version": "14"
+      },
+      "rewritten_query": "Does recovery_prefetch exist in 14?",
+      "resolution_pass": true,
+      "is_false_trigger": false,
+      "exp_outcome": "abstain",
+      "act_outcome": "abstain",
+      "act_code": "VERSION_MISSING",
+      "values_found": [],
+      "expected_values": [],
+      "synthesis_mode": null,
+      "fell_back_to_offline": false,
+      "header_only": false,
+      "citations": [],
+      "draft_answer_preview": "I cannot provide an answer for this question.\n\n- **Scope**: PostgreSQL 14\n- **Status**: ABSTAINED (High Integrity Guardr...",
+      "e2e_pass": true,
+      "notes": "Added in 15. A correct system says it is not in 14, and must not answer from the 15 chunk. Setting must be discovered from the corpus, not a hand-written list."
+    },
+    {
+      "id": "g07",
+      "category": "possessive_version_same",
+      "exp_res": {
+        "status": "resolved",
+        "setting": "log_startup_progress_interval",
+        "version": "16"
+      },
+      "act_res": {
+        "status": "resolved",
+        "setting": "log_startup_progress_interval",
+        "version": "16"
+      },
+      "rewritten_query": "Is log_startup_progress_interval's default the same in 16?",
+      "resolution_pass": true,
+      "is_false_trigger": false,
+      "exp_outcome": "answer",
+      "act_outcome": "answer",
+      "act_code": null,
+      "values_found": [
+        "10s"
+      ],
+      "expected_values": [
+        "10s"
+      ],
+      "synthesis_mode": "llm",
+      "fell_back_to_offline": false,
+      "header_only": false,
+      "citations": [
+        "pg16-runtime-config-logging-log-startup-progress-interval",
+        "pg15-runtime-config-logging-log-startup-progress-interval"
+      ],
+      "draft_answer_preview": "Yes, the default value of `log_startup_progress_interval` in PostgreSQL 16 is 10 seconds [^pg16-runtime-config-logging-l...",
+      "e2e_pass": true,
+      "notes": "Unit equivalence: '10 seconds (10s)'."
+    },
+    {
+      "id": "g08",
+      "category": "follow_up_no_pronoun_missing",
+      "exp_res": {
+        "status": "resolved",
+        "setting": "scram_iterations",
+        "version": "15"
+      },
+      "act_res": {
+        "status": "resolved",
+        "setting": "scram_iterations",
+        "version": "15"
+      },
+      "rewritten_query": "What is the configuration and behavior of scram_iterations in PostgreSQL 15?",
+      "resolution_pass": true,
+      "is_false_trigger": false,
+      "exp_outcome": "abstain",
+      "act_outcome": "abstain",
+      "act_code": "VERSION_MISSING",
+      "values_found": [],
+      "expected_values": [],
+      "synthesis_mode": null,
+      "fell_back_to_offline": false,
+      "header_only": false,
+      "citations": [],
+      "draft_answer_preview": "I cannot provide an answer for this question.\n\n- **Scope**: PostgreSQL 15\n- **Status**: ABSTAINED (High Integrity Guardr...",
+      "e2e_pass": true,
+      "notes": "No pronoun, only a bare version. The setting is new in 16."
+    },
+    {
+      "id": "g09",
+      "category": "follow_up_no_pronoun",
+      "exp_res": {
+        "status": "resolved",
+        "setting": "autovacuum_vacuum_scale_factor",
+        "version": "16"
+      },
+      "act_res": {
+        "status": "resolved",
+        "setting": "autovacuum_vacuum_scale_factor",
+        "version": "16"
+      },
+      "rewritten_query": "What is the configuration and behavior of autovacuum_vacuum_scale_factor in PostgreSQL 16?",
+      "resolution_pass": true,
+      "is_false_trigger": false,
+      "exp_outcome": "answer",
+      "act_outcome": "answer",
+      "act_code": null,
+      "values_found": [
+        "0.2"
+      ],
+      "expected_values": [
+        "0.2"
+      ],
+      "synthesis_mode": "llm",
+      "fell_back_to_offline": false,
+      "header_only": false,
+      "citations": [
+        "pg16-runtime-config-autovacuum-autovacuum-vacuum-scale-factor"
+      ],
+      "draft_answer_preview": "In PostgreSQL 16, `autovacuum_vacuum_scale_factor` is a floating point parameter that specifies a fraction of the table ...",
+      "e2e_pass": true,
+      "notes": "Decimal value: the sentence splitter and verifier must not split inside 0.2."
+    },
+    {
+      "id": "g10",
+      "category": "plural_pronoun",
+      "exp_res": {
+        "status": "resolved_multi_or_ambiguous",
+        "setting": null,
+        "version": "16"
+      },
+      "act_res": {
+        "status": "ambiguous",
+        "setting": null,
+        "version": null
+      },
+      "rewritten_query": null,
+      "resolution_pass": true,
+      "is_false_trigger": false,
+      "exp_outcome": "either",
+      "act_outcome": "clarify",
+      "act_code": "AMBIGUOUS_FOLLOWUP",
+      "values_found": [],
+      "expected_values": [],
+      "synthesis_mode": null,
+      "fell_back_to_offline": false,
+      "header_only": false,
+      "citations": [],
+      "draft_answer_preview": "I cannot provide an answer for this question.\n\n- **Scope**: PostgreSQL 16\n- **Status**: ABSTAINED (High Integrity Guardr...",
+      "e2e_pass": true,
+      "notes": "Resolve to BOTH settings (or ask which). Resolving to one is a failure. A good answer links the threshold and the scale factor."
+    },
+    {
+      "id": "g11",
+      "category": "plural_pronoun_which_one",
+      "exp_res": {
+        "status": "resolved_multi_or_ambiguous",
+        "setting": null,
+        "version": "16"
+      },
+      "act_res": {
+        "status": "ambiguous",
+        "setting": null,
+        "version": null
+      },
+      "rewritten_query": null,
+      "resolution_pass": true,
+      "is_false_trigger": false,
+      "exp_outcome": "either",
+      "act_outcome": "clarify",
+      "act_code": "AMBIGUOUS_FOLLOWUP",
+      "values_found": [],
+      "expected_values": [],
+      "synthesis_mode": null,
+      "fell_back_to_offline": false,
+      "header_only": false,
+      "citations": [],
+      "draft_answer_preview": "I cannot provide an answer for this question.\n\n- **Scope**: PostgreSQL 16\n- **Status**: ABSTAINED (High Integrity Guardr...",
+      "e2e_pass": true,
+      "notes": "wal_buffers needs a server start; full_page_writes does not. An answer that blames the wrong one is a failure."
+    },
+    {
+      "id": "g12",
+      "category": "explicit_setting_wins",
+      "exp_res": {
+        "status": "passthrough",
+        "setting": "log_connections",
+        "version": "16"
+      },
+      "act_res": {
+        "status": "passthrough",
+        "setting": "log_connections",
+        "version": "16"
+      },
+      "rewritten_query": "What is log_connections in PostgreSQL 16?",
+      "resolution_pass": true,
+      "is_false_trigger": false,
+      "exp_outcome": "answer",
+      "act_outcome": "answer",
+      "act_code": null,
+      "values_found": [
+        "off"
+      ],
+      "expected_values": [
+        "off"
+      ],
+      "synthesis_mode": "llm",
+      "fell_back_to_offline": false,
+      "header_only": false,
+      "citations": [
+        "pg16-runtime-config-logging-log-connections"
+      ],
+      "draft_answer_preview": "In PostgreSQL 16, `log_connections` is a boolean parameter that causes each attempted connection to the server to be log...",
+      "e2e_pass": true,
+      "notes": ""
+    },
+    {
+      "id": "g13",
+      "category": "pronoun_word_not_followup",
+      "exp_res": {
+        "status": "passthrough",
+        "setting": "log_statement",
+        "version": "16"
+      },
+      "act_res": {
+        "status": "passthrough",
+        "setting": "log_statement",
+        "version": "16"
+      },
+      "rewritten_query": "Is it safe to set log_statement to all on a busy server?",
+      "resolution_pass": true,
+      "is_false_trigger": false,
+      "exp_outcome": "either",
+      "act_outcome": "abstain",
+      "act_code": "ABSTAINED",
+      "values_found": [],
+      "expected_values": [],
+      "synthesis_mode": "llm",
+      "fell_back_to_offline": false,
+      "header_only": false,
+      "citations": [],
+      "draft_answer_preview": "I cannot provide an answer for this question.\n\n- **Scope**: PostgreSQL 16\n- **Status**: ABSTAINED (High Integrity Guardr...",
+      "e2e_pass": true,
+      "notes": "TRAP: 'it' appears, but this is a new question that names a setting. Memory must not rewrite it to huge_pages. Answer or refusal are both fine."
+    },
+    {
+      "id": "g14",
+      "category": "explicit_version_wins",
+      "exp_res": {
+        "status": "passthrough",
+        "setting": "superuser_reserved_connections",
+        "version": "14"
+      },
+      "act_res": {
+        "status": "passthrough",
+        "setting": "superuser_reserved_connections",
+        "version": "14"
+      },
+      "rewritten_query": "What is superuser_reserved_connections in version 14?",
+      "resolution_pass": true,
+      "is_false_trigger": false,
+      "exp_outcome": "answer",
+      "act_outcome": "answer",
+      "act_code": null,
+      "values_found": [
+        "3"
+      ],
+      "expected_values": [
+        "3"
+      ],
+      "synthesis_mode": "llm",
+      "fell_back_to_offline": false,
+      "header_only": false,
+      "citations": [
+        "pg14-runtime-config-connection-superuser-reserved-connections"
+      ],
+      "draft_answer_preview": "In PostgreSQL version 14, `superuser_reserved_connections` is an integer parameter that determines the number of connect...",
+      "e2e_pass": true,
+      "notes": "Version must be 14 (explicit). Answer must cite a pg14 chunk."
+    },
+    {
+      "id": "g15",
+      "category": "pronoun_word_offtopic",
+      "exp_res": {
+        "status": "passthrough",
+        "setting": null,
+        "version": null
+      },
+      "act_res": {
+        "status": "passthrough",
+        "setting": null,
+        "version": "16"
+      },
+      "rewritten_query": "Tell me a joke about servers. Is it funny?",
+      "resolution_pass": true,
+      "is_false_trigger": false,
+      "exp_outcome": "abstain",
+      "act_outcome": "abstain",
+      "act_code": "OUT_OF_SCOPE",
+      "values_found": [],
+      "expected_values": [],
+      "synthesis_mode": null,
+      "fell_back_to_offline": false,
+      "header_only": false,
+      "citations": [],
+      "draft_answer_preview": "I cannot provide an answer for this question.\n\n- **Scope**: PostgreSQL 16\n- **Status**: ABSTAINED (High Integrity Guardr...",
+      "e2e_pass": true,
+      "notes": "Same family as the previous false trigger ('Is it Paris?'). Memory must not turn this into a question about full_page_writes."
+    },
+    {
+      "id": "g16",
+      "category": "short_legit_followup",
+      "exp_res": {
+        "status": "resolved",
+        "setting": "log_temp_files",
+        "version": "16"
+      },
+      "act_res": {
+        "status": "resolved",
+        "setting": "log_temp_files",
+        "version": "16"
+      },
+      "rewritten_query": "Can a regular user change log_temp_files in PostgreSQL 16?",
+      "resolution_pass": true,
+      "is_false_trigger": false,
+      "exp_outcome": "answer",
+      "act_outcome": "answer",
+      "act_code": null,
+      "values_found": [],
+      "expected_values": [],
+      "synthesis_mode": "llm",
+      "fell_back_to_offline": false,
+      "header_only": false,
+      "citations": [
+        "pg16-runtime-config-logging-log-temp-files"
+      ],
+      "draft_answer_preview": "No, a regular user cannot change `log_temp_files` in PostgreSQL 16; only superusers and users with the appropriate `SET`...",
+      "e2e_pass": true,
+      "notes": "Short follow-up with no PostgreSQL keywords. It must NOT be refused as off-topic (OUT_OF_SCOPE). Docs: superusers and users with the appropriate SET privilege."
+    },
+    {
+      "id": "g17",
+      "category": "short_legit_followup",
+      "exp_res": {
+        "status": "resolved",
+        "setting": "autovacuum_vacuum_threshold",
+        "version": "15"
+      },
+      "act_res": {
+        "status": "resolved",
+        "setting": "autovacuum_vacuum_threshold",
+        "version": "15"
+      },
+      "rewritten_query": "Can I change autovacuum_vacuum_threshold per table in PostgreSQL 15?",
+      "resolution_pass": true,
+      "is_false_trigger": false,
+      "exp_outcome": "answer",
+      "act_outcome": "answer",
+      "act_code": null,
+      "values_found": [],
+      "expected_values": [],
+      "synthesis_mode": "llm",
+      "fell_back_to_offline": false,
+      "header_only": false,
+      "citations": [
+        "pg15-runtime-config-autovacuum-autovacuum-vacuum-threshold"
+      ],
+      "draft_answer_preview": "Yes, you can change `autovacuum_vacuum_threshold` per table [^pg15-runtime-config-autovacuum-autovacuum-vacuum-threshold...",
+      "e2e_pass": true,
+      "notes": "Docs say it can be overridden per table via storage parameters. Must not be refused as off-topic."
+    },
+    {
+      "id": "g18",
+      "category": "followup_after_refusal",
+      "exp_res": {
+        "status": "ambiguous",
+        "setting": null,
+        "version": null
+      },
+      "act_res": {
+        "status": "ambiguous",
+        "setting": null,
+        "version": null
+      },
+      "rewritten_query": null,
+      "resolution_pass": true,
+      "is_false_trigger": false,
+      "exp_outcome": "clarify",
+      "act_outcome": "clarify",
+      "act_code": "AMBIGUOUS_FOLLOWUP",
+      "values_found": [],
+      "expected_values": [],
+      "synthesis_mode": null,
+      "fell_back_to_offline": false,
+      "header_only": false,
+      "citations": [],
+      "draft_answer_preview": "I cannot provide an answer for this question.\n\n- **Scope**: PostgreSQL 16\n- **Status**: ABSTAINED (High Integrity Guardr...",
+      "e2e_pass": true,
+      "notes": "The earlier setting does not exist. It must not be stored or answered about."
+    },
+    {
+      "id": "g19",
+      "category": "followup_after_injection",
+      "exp_res": {
+        "status": "ambiguous",
+        "setting": null,
+        "version": null
+      },
+      "act_res": {
+        "status": "ambiguous",
+        "setting": null,
+        "version": null
+      },
+      "rewritten_query": null,
+      "resolution_pass": true,
+      "is_false_trigger": false,
+      "exp_outcome": "clarify",
+      "act_outcome": "clarify",
+      "act_code": "AMBIGUOUS_FOLLOWUP",
+      "values_found": [],
+      "expected_values": [],
+      "synthesis_mode": null,
+      "fell_back_to_offline": false,
+      "header_only": false,
+      "citations": [],
+      "draft_answer_preview": "I cannot provide an answer for this question.\n\n- **Scope**: PostgreSQL 16\n- **Status**: ABSTAINED (High Integrity Guardr...",
+      "e2e_pass": true,
+      "notes": "TRAP: the refused injection mentions a REAL setting (wal_buffers). Memory must not store it, and turn 2 must not resolve to wal_buffers."
+    },
+    {
+      "id": "g20",
+      "category": "pronoun_plus_unsupported_version",
+      "exp_res": {
+        "status": "resolved",
+        "setting": "wal_keep_size",
+        "version": "12"
+      },
+      "act_res": {
+        "status": "resolved",
+        "setting": "wal_keep_size",
+        "version": "12"
+      },
+      "rewritten_query": "What was wal_keep_size's default in version 12?",
+      "resolution_pass": true,
+      "is_false_trigger": false,
+      "exp_outcome": "abstain",
+      "act_outcome": "abstain",
+      "act_code": "UNSUPPORTED_VERSION",
+      "values_found": [],
+      "expected_values": [],
+      "synthesis_mode": null,
+      "fell_back_to_offline": false,
+      "header_only": false,
+      "citations": [],
+      "draft_answer_preview": "I cannot provide an answer for this question.\n\n- **Scope**: PostgreSQL 12\n- **Status**: ABSTAINED (High Integrity Guardr...",
+      "e2e_pass": true,
+      "notes": "Memory supplies the setting, the explicit unsupported version must still be refused."
+    }
+  ],
+  "check_by_eye": [
+    {
+      "id": "g02",
+      "category": "pronoun_resolves",
+      "turn1_q": "What is superuser_reserved_connections in PostgreSQL 16?",
+      "turn2_q": "Does it need a server restart?",
+      "rewritten_q": "Does superuser_reserved_connections need a server restart in PostgreSQL 16?",
+      "draft_answer": "Yes, `superuser_reserved_connections` can only be set at server start, which means it requires a server restart [^pg16-runtime-config-connection-superuser-reserved-connections].",
+      "citations": [
+        "pg16-runtime-config-connection-superuser-reserved-connections"
+      ],
+      "is_abstained": false,
+      "abstention_code": null,
+      "notes": "The rewrite must keep the restart question (not become a generic 'configuration and behavior' question). Docs say server start only.",
+      "must_not_assert": null,
+      "must_not_cite_setting": null
+    },
+    {
+      "id": "g10",
+      "category": "plural_pronoun",
+      "turn1_q": "What are the defaults of autovacuum_vacuum_threshold and autovacuum_vacuum_scale_factor in PostgreSQL 16?",
+      "turn2_q": "What do those two settings decide together?",
+      "rewritten_q": null,
+      "draft_answer": "I cannot provide an answer for this question.\n\n- **Scope**: PostgreSQL 16\n- **Status**: ABSTAINED (High Integrity Guardrail)\n- **Code**: AMBIGUOUS_FOLLOWUP\n- **Reason**: The previous question discussed multiple parameters ('autovacuum_vacuum_threshold' and 'autovacuum_vacuum_scale_factor'). Would you like me to check both or focus on a specific one?\n\n*EvidenceFlow AI adheres to strict groundedness: answers are only generated when verifiable evidence exists in official documentation.*",
+      "citations": [],
+      "is_abstained": true,
+      "abstention_code": "AMBIGUOUS_FOLLOWUP",
+      "notes": "Resolve to BOTH settings (or ask which). Resolving to one is a failure. A good answer links the threshold and the scale factor.",
+      "must_not_assert": null,
+      "must_not_cite_setting": null
+    },
+    {
+      "id": "g11",
+      "category": "plural_pronoun_which_one",
+      "turn1_q": "What are the defaults of full_page_writes and wal_buffers in PostgreSQL 16?",
+      "turn2_q": "Which one of them needs a restart?",
+      "rewritten_q": null,
+      "draft_answer": "I cannot provide an answer for this question.\n\n- **Scope**: PostgreSQL 16\n- **Status**: ABSTAINED (High Integrity Guardrail)\n- **Code**: AMBIGUOUS_FOLLOWUP\n- **Reason**: The previous question discussed multiple parameters ('full_page_writes' and 'wal_buffers'). Would you like me to check both or focus on a specific one?\n\n*EvidenceFlow AI adheres to strict groundedness: answers are only generated when verifiable evidence exists in official documentation.*",
+      "citations": [],
+      "is_abstained": true,
+      "abstention_code": "AMBIGUOUS_FOLLOWUP",
+      "notes": "wal_buffers needs a server start; full_page_writes does not. An answer that blames the wrong one is a failure.",
+      "must_not_assert": "full_page_writes requires a restart",
+      "must_not_cite_setting": null
+    },
+    {
+      "id": "g13",
+      "category": "pronoun_word_not_followup",
+      "turn1_q": "What is huge_pages in PostgreSQL 16?",
+      "turn2_q": "Is it safe to set log_statement to all on a busy server?",
+      "rewritten_q": "Is it safe to set log_statement to all on a busy server?",
+      "draft_answer": "I cannot provide an answer for this question.\n\n- **Scope**: PostgreSQL 16\n- **Status**: ABSTAINED (High Integrity Guardrail)\n- **Code**: ABSTAINED\n- **Reason**: Model declared insufficient evidence in retrieved passages.\n\n*EvidenceFlow AI adheres to strict groundedness: answers are only generated when verifiable evidence exists in official documentation.*",
+      "citations": [],
+      "is_abstained": true,
+      "abstention_code": "ABSTAINED",
+      "notes": "TRAP: 'it' appears, but this is a new question that names a setting. Memory must not rewrite it to huge_pages. Answer or refusal are both fine.",
+      "must_not_assert": null,
+      "must_not_cite_setting": "huge_pages"
+    },
+    {
+      "id": "g16",
+      "category": "short_legit_followup",
+      "turn1_q": "What is log_temp_files in PostgreSQL 16?",
+      "turn2_q": "Can a regular user change it?",
+      "rewritten_q": "Can a regular user change log_temp_files in PostgreSQL 16?",
+      "draft_answer": "No, a regular user cannot change `log_temp_files` in PostgreSQL 16; only superusers and users with the appropriate `SET` privilege can change this setting [^pg16-runtime-config-logging-log-temp-files].",
+      "citations": [
+        "pg16-runtime-config-logging-log-temp-files"
+      ],
+      "is_abstained": false,
+      "abstention_code": null,
+      "notes": "Short follow-up with no PostgreSQL keywords. It must NOT be refused as off-topic (OUT_OF_SCOPE). Docs: superusers and users with the appropriate SET privilege.",
+      "must_not_assert": null,
+      "must_not_cite_setting": null
+    },
+    {
+      "id": "g17",
+      "category": "short_legit_followup",
+      "turn1_q": "What is autovacuum_vacuum_threshold in PostgreSQL 15?",
+      "turn2_q": "Can I change it per table?",
+      "rewritten_q": "Can I change autovacuum_vacuum_threshold per table in PostgreSQL 15?",
+      "draft_answer": "Yes, you can change `autovacuum_vacuum_threshold` per table [^pg15-runtime-config-autovacuum-autovacuum-vacuum-threshold]. While the parameter can normally only be set in the `postgresql.conf` file or on the server command line, the setting can be overridden for individual tables by changing table storage parameters [^pg15-runtime-config-autovacuum-autovacuum-vacuum-threshold].",
+      "citations": [
+        "pg15-runtime-config-autovacuum-autovacuum-vacuum-threshold"
+      ],
+      "is_abstained": false,
+      "abstention_code": null,
+      "notes": "Docs say it can be overridden per table via storage parameters. Must not be refused as off-topic.",
+      "must_not_assert": null,
+      "must_not_cite_setting": null
+    }
+  ],
+  "llm_model": "gemini-3.5-flash-lite",
+  "temperature": 0.0
+}

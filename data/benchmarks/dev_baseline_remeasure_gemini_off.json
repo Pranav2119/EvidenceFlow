@@ -2071,5 +2071,7 @@
       "l1_self_check": null,
       "answer_preview": "I cannot provide an answer for this question.\n\n- **Scope**: PostgreSQL 16\n- **Status**: ABSTAINED (High Integrity Guardrail)\n- **Code**: NO_SUBSTANTIVE_EVIDENCE"
     }
-  ]
+  ],
+  "llm_model": "gemini-3.5-flash-lite",
+  "temperature": 0.0
 }

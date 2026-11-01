@@ -352,6 +352,8 @@ def run_benchmark(
         "platform": f"{platform.system()} {platform.release()} ({platform.machine()})",
         "repeats": repeats,
         "delay_seconds": delay_seconds,
+        "llm_model": settings.GEMINI_MODEL if gemini_enabled else "none (offline synthesizer)",
+        "temperature": 0.0,
         "counts": {
             "total_questions": total_q,
             "answerable_questions": answerable_count,
