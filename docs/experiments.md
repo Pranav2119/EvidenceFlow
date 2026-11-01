@@ -224,6 +224,18 @@ We evaluated whether activating the Neo4j conversational memory graph resolver d
   4. `g15`: Off-corpus vocabulary in pronoun question (`"Tell me a joke about servers. Is it funny?"`) false-triggered pronoun resolution.
   5. `g07`: Cross-version comparative query (`"Is its default the same in 16?"`) did not fetch both version chunks.
 
+#### Post-Fix Regression Verification Run (NOT Generalization Evidence)
+Following completion of the fix batch, Held-out Set 2 was re-executed strictly as a regression verification run to ensure the targeted architectural fixes resolved the identified failure modes without regressions:
+- **Raw Regression Artifacts**: `data/benchmarks/holdout2_results_gemini_off_after.json`, `data/benchmarks/holdout2_results_gemini_on_after.json`
+- **Methodological Disclaimer**: Because `followup_holdout2_20.json` was analyzed to design the fix batch, these results (**20/20 Resolution, 20/20 E2E**) represent a post-fix regression verification check on a known development set, and strictly **NOT** generalization evidence.
+
+| Metric | Post-Fix Gemini OFF | Post-Fix Gemini ON | Delta vs Pre-Fix (Gemini ON) | Status |
+| :--- | :---: | :---: | :---: | :--- |
+| **Resolution Accuracy** | **20 / 20 (100.0%)** | **20 / 20 (100.0%)** | **+20.0%** (was 16/20) | Regression Verified |
+| **False Trigger Rate** | **0 / 2 (0.0%)** | **0 / 2 (0.0%)** | **-25.0%** (was 1/4) | Regression Verified |
+| **End-to-End Correctness** | **11 / 20 (55.0%)** | **20 / 20 (100.0%)** | **+25.0%** (was 15/20) | Regression Verified |
+| **Gemini Fallback Count** | N/A | **0 / 20 (0.0%)** | 0.0% | Zero fallbacks |
+
 ---
 
 ### 5. Tier 1 Final Baseline Measurements (For Tier 2 Cache Comparisons)

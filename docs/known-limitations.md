@@ -140,6 +140,26 @@ The sequential step counter in `step_ledger` is computed via `SELECT COALESCE(MA
 
 ---
 
+## 8. Off-Corpus Vocabulary Guard Checks Words, Not Meaning
+
+### Symptom & Scope Boundary
+The off-corpus vocabulary guard (`has_off_corpus_content_words`) inspects content tokens against the indexed documentation corpus vocabulary and common English/database question stopwords:
+- **Lexical vs. Semantic Limitation**: The guard performs purely lexical token validation, not semantic intent analysis.
+- **In-Vocabulary Queries Pass**: Non-technical or off-domain follow-ups that happen to be constructed entirely from words present in the PostgreSQL documentation (e.g. *"Is it faster?"*, *"Is it risky?"*, *"Why is that?"*, or queries composed of common performance words) return `has_off_corpus_content_words = False` and are treated as potential follow-up questions.
+- **Safety Guarantee**: The guard prevents false triggers on clearly out-of-domain words (*"joke"*, *"funny"*, *"capital"*, *"president"*). For in-vocabulary queries, semantic relevance and factual grounding are deferred downstream to the retriever, relevance scoring, and Layer 2 verifier.
+
+---
+
+## 9. Offline Fallback Synthesizer is a Degraded Mode with Strict Attribute Matching
+
+### Symptom & Scope Boundary
+When the Gemini API is unreachable or disabled, EvidenceFlow operates in deterministic offline fallback mode:
+- **Degraded Synthesis Mode**: Offline fallback cannot perform open-ended abstractive synthesis or reasoning. It scans retrieved documentation chunks for substantive sentences containing substantive verbs and the specific asked attribute (e.g. *restart*, *change*, *reload*, *default*, *per-table*).
+- **Fail-Closed Abstention**: If the retrieved chunk discusses the parameter generally but does not contain an explicit sentence matching the requested attribute, the offline synthesizer intentionally abstains with code `NO_SUBSTANTIVE_EVIDENCE` (e.g. *"Insufficient evidence in the PostgreSQL 16 documentation: does not specify per-table behavior for max_connections"*).
+- **Design Intent**: This degraded mode prioritizes safety and zero hallucination over answer coverage, preventing the generation of misleading generic definitions when a specific technical attribute was queried.
+
+---
+
 ## Summary Matrix
 
 | Limitation | Severity | Trigger Condition | Current Safeguard | Planned Architectural Fix |
@@ -151,3 +171,5 @@ The sequential step counter in `step_ledger` is computed via `SELECT COALESCE(MA
 | **Multi-Turn Entity Resolution** | Deferred / Tier 2 | Follow-up questions with implicit entities (*"what about v15?"*) | Checkpointer recovers state; query requires explicit parameter | Tier 2 Neo4j conversational graph memory & query rewriting |
 | **Concurrent Step Counter Race** | Low / Sequential by Design | Simultaneous parallel calls on the exact same `thread_id` | Monotonic `MAX(step_number) + 1` query | Row-level locking (`FOR UPDATE`) or atomic PostgreSQL sequence |
 | **MCP Credential Isolation** | Architectural Boundary | Direct access to Qdrant without dedicated read-only key | Procedural (read APIs only) + Tool Name Linting Guard | Provision read-only Qdrant API key in production |
+| **Vocab Guard Lexical Boundary** | Medium / Semantic Boundary | Off-domain question using in-vocabulary corpus words | Downstream retriever & L2 verifier | NLI semantic intent classification |
+| **Offline Fallback Attribute Match** | Low / Design Feature | Query asking for an attribute not in substantive sentence | Fail-closed abstention (`NO_SUBSTANTIVE_EVIDENCE`) | Live LLM synthesis mode (standard path) |
