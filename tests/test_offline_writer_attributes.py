@@ -70,7 +70,7 @@ def test_offline_writer_abstains_when_attribute_missing_no_generic_fallback(pass
     answer = deterministic_fallback_answer("Can I set max_connections per-table?", "16", passages_without_per_table)
     text, code = answer
     # Must abstain with clear code
-    assert code == "ATTRIBUTE_NOT_SPECIFIED"
+    assert code == "NO_SUBSTANTIVE_EVIDENCE"
     assert "does not specify per-table behavior" in text
     # Must NOT have returned the generic definition ("Determines the maximum number...")
     assert "Determines the maximum number" not in text

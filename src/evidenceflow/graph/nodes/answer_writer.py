@@ -218,8 +218,8 @@ def deterministic_fallback_answer(
             setting_name = named_settings[0] if named_settings else "the setting"
             logger.info("Deterministic fallback: asked attribute '%s' not found in substantive sentences. Abstaining.", attr_name)
             return FallbackAnswer(
-                f"Documentation for PostgreSQL {version} does not specify {attr_name} behavior for {setting_name}.",
-                "ATTRIBUTE_NOT_SPECIFIED",
+                f"Insufficient evidence in the PostgreSQL {version} documentation: does not specify {attr_name} behavior for {setting_name}.",
+                "NO_SUBSTANTIVE_EVIDENCE",
             )
 
     scored.sort(key=lambda x: (-x[0], x[1]))
