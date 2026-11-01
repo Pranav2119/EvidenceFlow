@@ -57,7 +57,7 @@ FOLLOW_UP_PRONOUN_PATTERNS = [
     r"\b(which of (?:those|these|them)|both (?:settings|parameters|options))\b",
     r"\b(what about|how about|did that change|is that still|was that)\b",
     # Short setting-less questions containing a version or starting with and/in/also/how about/what about/same [Item 2]
-    r"^\s*(?:and\s+|also\s+|same\s+|what\s+about\s+|how\s+about\s+)?(?:in\s+)?(?:postgresql\s+|postgres\s+|v)?(1[0-9]|2[0-9])\??\s*$",
+    r"^\s*(?:and\s+|also\s+|same\s+|what\s+about\s+|how\s+about\s+)?(?:in\s+)?(?:postgresql\s+|postgres\s+|version\s+|pg\s+|v)?(1[0-9]|2[0-9])\??\s*$",
 ]
 
 # Patterns for explicit questions that happen to use "it" or "that" as grammar words
@@ -86,7 +86,7 @@ def extract_explicit_version(query: str) -> Optional[str]:
 
     # 2. Match standalone version switch queries: "in 12?", "and 15?", "same in 15?"
     match_short = re.search(
-        r"^\s*(?:and\s+|also\s+|same\s+|what\s+about\s+|how\s+about\s+)?(?:in\s+)?(?:postgresql\s+|postgres\s+|v)?(\d{1,2})\??\s*$",
+        r"^\s*(?:and\s+|also\s+|same\s+|what\s+about\s+|how\s+about\s+)?(?:in\s+)?(?:postgresql\s+|postgres\s+|version\s+|pg\s+|v)?(\d{1,2})\??\s*$",
         q,
     )
     if match_short:
@@ -365,7 +365,7 @@ def safe_substitute_pronoun(query: str, entity_name: str, target_version: Option
 
     # 1. Standalone version switch queries: "in v14?", "what about 15?", "and in 16?", "same in 15?" [Item 2]
     m_same_ver = re.match(
-        r"^\s*same\s+(?:in\s+)?(?:postgresql\s+|postgres\s+|v)?(1[0-9]|2[0-9])\??\s*$",
+        r"^\s*same\s+(?:in\s+)?(?:postgresql\s+|postgres\s+|version\s+|pg\s+|v)?(1[0-9]|2[0-9])\??\s*$",
         q,
         re.IGNORECASE,
     )
@@ -374,7 +374,7 @@ def safe_substitute_pronoun(query: str, entity_name: str, target_version: Option
         return f"Is {entity_name} the same in PostgreSQL {ver}?"
 
     m_ver_switch = re.match(
-        r"^\s*(?:and\s+|also\s+|what\s+about\s+|how\s+about\s+)?(?:in\s+)?(?:postgresql\s+|postgres\s+|v)?(1[0-9]|2[0-9])\??\s*$",
+        r"^\s*(?:and\s+|also\s+|what\s+about\s+|how\s+about\s+)?(?:in\s+)?(?:postgresql\s+|postgres\s+|version\s+|pg\s+|v)?(1[0-9]|2[0-9])\??\s*$",
         q,
         re.IGNORECASE,
     )
