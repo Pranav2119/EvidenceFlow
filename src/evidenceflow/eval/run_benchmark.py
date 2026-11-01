@@ -153,7 +153,14 @@ def run_benchmark(
         # -----------------------------------------------------------------
         # Latency Repeats: 1 Warm-up (discarded) + 'repeats' timed executions
         # -----------------------------------------------------------------
-        # Warm-up run
+        # Batch cooldown every 5 questions to refresh quota bucket
+        if gemini_enabled and idx > 1 and (idx - 1) % 5 == 0:
+            time.sleep(10.0)
+
+        # Warm-up run (with pacing delay)
+        if gemini_enabled and delay_seconds > 0:
+            time.sleep(delay_seconds)
+
         final_state = run_pipeline(
             query=query,
             version=version,
