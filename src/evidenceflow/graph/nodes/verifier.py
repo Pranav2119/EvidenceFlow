@@ -91,14 +91,16 @@ def extract_claimed_values(statement: str) -> List[str]:
     # Strip citation preamble, breadcrumbs, and section numbers
     stmt_clean = re.sub(r"^According to PostgreSQL \d+ documentation on [^:]+:\s*", "", statement, flags=re.IGNORECASE)
     stmt_clean = re.sub(r"^In PostgreSQL \d+, [^:]+ is documented under [^.\n]+(?:\.|\n)+", "", stmt_clean, flags=re.IGNORECASE)
-    stmt_clean = re.sub(r"\b(?:section|chapter)\s+[A-Za-z0-9.]+\b\.?", "", stmt_clean, flags=re.IGNORECASE)
-    # Strip section references (digits.digits with optional trailing dot, e.g. 20.5., 20.10., E.16.2.)
-    # 1. Letter prefixed like E.16.2.
+    # Strip Section N, Chapter N, Part N
+    stmt_clean = re.sub(r"\b(?:section|chapter|part|reference|references|ref)\s+[A-Za-z0-9.]+\b\.?", "", stmt_clean, flags=re.IGNORECASE)
+    # Strip parenthesized breadcrumbs containing section numbers e.g. (20.4. Resource Consumption)
+    stmt_clean = re.sub(r"\((?:[A-Za-z]\.|\d+\.)[^)]*\)", "", stmt_clean)
+    # Strip letter-prefixed appendix references like E.16.2. or A.1.
     stmt_clean = re.sub(r"\b[A-Za-z]\.\d+(?:\.\d+)*\.?", "", stmt_clean)
-    # 2. Multi-part sections like 20.4.1. or 20.5.2.
+    # Strip multi-part sections with 2+ dots like 20.4.1 or 20.4.1.
     stmt_clean = re.sub(r"\b\d+\.\d+\.\d+(?:\.\d+)*\.?", "", stmt_clean)
-    # 3. Chapter >= 10 sections like 20.5. or 20.10. (with or without trailing dot)
-    stmt_clean = re.sub(r"\b\d{2,}\.\d+\.?(?!\s*(?:mb|kb|gb|tb|ms|s|min|pages|bytes|rows|%))", "", stmt_clean, flags=re.IGNORECASE)
+    # Strip section numbers with trailing dot when followed by capitalized words (breadcrumbs) e.g. 20.5. Resource Consumption
+    stmt_clean = re.sub(r"\b\d+\.\d+\.\s+(?=[A-Z])", "", stmt_clean)
     stmt_lower = stmt_clean.lower()
     filtered = []
 

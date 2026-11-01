@@ -58,3 +58,23 @@ def test_section_references_stripped_and_real_decimals_preserved():
     assert "0.9" in extracted
     assert "4.0" in extracted
     assert "0.2" in extracted
+
+
+def test_multi_digit_decimals_preserved_and_breadcrumbs_stripped():
+    # Unitless decimals with 2 or more leading digits ("10.5", "100.0", "12.5") must count as claimed values
+    stmt = "The default value is 10.5, the upper threshold is 100.0, and step is 12.5."
+    extracted = extract_claimed_values(stmt)
+    assert "10.5" in extracted
+    assert "100.0" in extracted
+    assert "12.5" in extracted
+
+    # Confirm stripping applies to breadcrumb / "Section N" / "Chapter N" contexts
+    breadcrumb_stmt = (
+        "According to PostgreSQL 16 (20.4. Resource Consumption): "
+        "documented in Chapter 20.10 and Section 20.5., the default is 10.5."
+    )
+    b_extracted = extract_claimed_values(breadcrumb_stmt)
+    assert "20.4" not in b_extracted
+    assert "20.10" not in b_extracted
+    assert "20.5" not in b_extracted
+    assert "10.5" in b_extracted
