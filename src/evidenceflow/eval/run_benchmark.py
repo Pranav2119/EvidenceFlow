@@ -157,7 +157,7 @@ def run_benchmark(
         final_state = run_pipeline(
             query=query,
             version=version,
-            thread_id=f"bench_{split}_{qid}_warmup",
+            thread_id=f"bench-{split}-{qid}-warmup",
             use_postgres_checkpointer=False,
             enable_memory=enable_memory,
         )
@@ -171,7 +171,7 @@ def run_benchmark(
             exec_state = run_pipeline(
                 query=query,
                 version=version,
-                thread_id=f"bench_{split}_{qid}_r{r}",
+                thread_id=f"bench-{split}-{qid}-r{r}",
                 use_postgres_checkpointer=False,
                 enable_memory=enable_memory,
             )
@@ -226,9 +226,18 @@ def run_benchmark(
             # IR and Answer Quality metrics apply to answerable questions
             q_recall = calculate_recall_at_k(retrieved_passages, gt_chunks, gt_matcher, k=5)
             q_mrr = calculate_reciprocal_rank(retrieved_passages, gt_chunks, gt_matcher, k=5)
-            q_prec = calculate_citation_precision(citations, retrieved_ids)
-            q_crecall = calculate_citation_recall(draft_answer, citations)
-            q_val_acc = check_value_accuracy(draft_answer, expected_value)
+            q_draft_val_acc = check_value_accuracy(draft_answer, expected_value)
+
+            # Compute quality metrics on FINAL user-visible answer:
+            # If refused, the user sees an abstention notice with zero valid citations/values
+            if is_abstained:
+                q_prec = 0.0
+                q_crecall = 0.0
+                q_val_acc = False
+            else:
+                q_prec = calculate_citation_precision(citations, retrieved_ids)
+                q_crecall = calculate_citation_recall(draft_answer, citations)
+                q_val_acc = q_draft_val_acc
 
             recalls.append(q_recall)
             mrrs.append(q_mrr)
@@ -261,6 +270,7 @@ def run_benchmark(
             "citation_precision": q_prec,
             "citation_recall": q_crecall,
             "value_accuracy": q_val_acc,
+            "draft_value_accuracy": q_draft_val_acc,
             "l1_self_check": l1_passed if not should_abstain else None,
             "answer_preview": draft_answer[:160],
         })
