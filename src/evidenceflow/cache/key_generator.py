@@ -94,6 +94,11 @@ def generate_embedding_key(
     """
     Computes a deterministic SHA-256 key for Layer 4 Embedding cache.
     Binds exact normalized text and embedding model name.
+
+    NOTE: Uses plain SHA-256 (not HMAC) intentionally. Embedding vectors are
+    not secret-sensitive — they are pure mathematical representations of text.
+    No cryptographic salt is required here; the model name alone provides
+    sufficient namespace separation between embedding model versions.
     """
     norm_text = " ".join(text.strip().split())
     payload = f"MODEL:{model_name}|TEXT:{norm_text}"
@@ -106,8 +111,15 @@ def generate_claim_key(
     version: str,
 ) -> str:
     """
-    Computes a canonical key for Layer 5 Verified-Claim cache.
+    Returns a canonical readable composite key for Layer 5 Verified-Claim cache.
     Maps an atomic parameter-attribute fact to its key.
+
+    Format: ``CLAIM:{version}:{entity}:{attribute}`` (e.g. "CLAIM:16:shared_buffers:default").
+
+    NOTE: This is a plain human-readable string key, NOT a cryptographic hash.
+    It is intentionally reversible for debuggability. If L5 is migrated to an
+    external store (Redis, Postgres), treat this key as a plaintext identifier,
+    not as opaque bytes.
     """
     clean_entity = entity.strip().lower()
     clean_attr = attribute.strip().lower()

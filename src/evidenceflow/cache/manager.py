@@ -5,7 +5,6 @@ and cross-version invalidation mechanisms.
 """
 
 from collections import OrderedDict
-import math
 import threading
 import time
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
@@ -42,7 +41,12 @@ def _cosine_similarity(vec_a: Sequence[float], vec_b: Sequence[float]) -> float:
 
 
 class LRUCache(OrderedDict):
-    """Simple thread-safe bounded LRU dictionary."""
+    """
+    Bounded LRU dictionary using insertion-order tracking via OrderedDict.
+
+    NOTE: This class is NOT internally thread-safe. All callers must hold an
+    external lock (e.g. ScopedCacheManager._lock) before calling any method.
+    """
     def __init__(self, maxsize: int = 2000):
         super().__init__()
         self.maxsize = maxsize
@@ -90,6 +94,11 @@ class ScopedCacheManager:
 
         # In-memory stores
         self._l1_exact = LRUCache(maxsize=max_exact_entries)
+        # L2 is a plain list (FIFO eviction via pop(0), not LRU).
+        # LRU promotion on every cosine-search read is O(N) list rebuild; FIFO is
+        # acceptable here because semantic entries are generally short-lived and the
+        # threshold (0.96) already prevents stale semantic matches from serving.
+        # Future: replace with an OrderedDict keyed by entry.id for true LRU.
         self._l2_semantic: List[SemanticCacheEntry] = []
         self._l2_max_size = max_semantic_entries
         self._l3_retrieval = LRUCache(maxsize=max_retrieval_entries)
@@ -268,6 +277,12 @@ class ScopedCacheManager:
         """
         Searches Layer 2 semantic cache for closest vector with matching version scope.
         Requires cosine similarity >= threshold (default 0.96).
+
+        Scaling note: this is an O(N) linear scan over all L2 entries. At
+        max_semantic_entries=1000 and 768-dim vectors the scan takes ~2-5 ms,
+        which is acceptable for Day 9 (in-memory, single-machine). A future
+        improvement (Day 13 ablation) can replace this with an HNSW index
+        (hnswlib or faiss) for sub-millisecond approximate nearest-neighbour lookup.
         """
         cutoff = threshold if threshold is not None else self.semantic_threshold
         cfg_v = config_version or self.default_config_version
@@ -588,6 +603,17 @@ class ScopedCacheManager:
                 if not any(c.passage_id == passage_id for c in entry.citations)
             ]
             evicted += (orig_len - len(self._l2_semantic))
+
+            # Invalidate L3 entries whose passage_ids list contains this passage.
+            # L3 caches retrieval results as lists of passage IDs — if a corpus
+            # chunk changes, any cached retrieval set referencing it is stale.
+            l3_keys_to_del = [
+                k for k, entry in self._l3_retrieval.items()
+                if passage_id in entry.passage_ids
+            ]
+            for k in l3_keys_to_del:
+                del self._l3_retrieval[k]
+                evicted += 1
 
             # Invalidate L5 entries
             l5_keys = [

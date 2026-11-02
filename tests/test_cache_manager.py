@@ -54,7 +54,11 @@ def test_l1_exact_match_hit_and_miss(cache_mgr):
 
 
 def test_l1_lru_eviction(cache_mgr):
-    """L1 respects max_exact_entries capacity and evicts oldest items."""
+    """L1 respects max_exact_entries capacity and evicts oldest (LRU) items.
+
+    No get() calls are interleaved below, so insertion order == LRU order.
+    Queries 0 and 1 are evicted first when capacity (10) is exceeded by 12 inserts.
+    """
     for i in range(12):
         cache_mgr.set_exact(
             query=f"Query {i}",
@@ -63,7 +67,7 @@ def test_l1_lru_eviction(cache_mgr):
             target_versions="16",
         )
 
-    # Since maxsize=10, queries 0 and 1 must be evicted
+    # Queries 0 and 1 were inserted first and never accessed → evicted (LRU)
     assert cache_mgr.get_exact("Query 0", "16") is None
     assert cache_mgr.get_exact("Query 1", "16") is None
     # Latest query must be present
@@ -189,7 +193,7 @@ def test_invalidate_by_version(cache_mgr):
 
     # Invalidate version 14
     evicted = cache_mgr.invalidate_by_version("14")
-    assert evicted >= 4
+    assert evicted == 4, f"Expected exactly 4 v14 entries evicted (1xL1+1xL2+1xL3+1xL5), got {evicted}"
 
     # Verify v14 is gone, v16 remains
     assert cache_mgr.get_exact("Q14", "14") is None
@@ -264,3 +268,72 @@ def test_high_level_orchestrated_lookup(cache_mgr):
     res_miss = cache_mgr.lookup("Unknown query", "16")
     assert res_miss.hit is False
     assert res_miss.answer is None
+
+
+def test_invalidate_by_passage_also_evicts_l3(cache_mgr):
+    """invalidate_by_passage evicts L3 retrieval entries whose passage_ids list contains the passage."""
+    # Seed an L3 entry that includes the target passage in its result set
+    cache_mgr.set_retrieval(
+        query="archive config",
+        passage_ids=["pg16-wal-archive-mode", "pg16-wal-level"],
+        scores=[0.91, 0.85],
+        target_versions="16",
+        top_k=5,
+    )
+    # Confirm it exists
+    assert cache_mgr.get_retrieval("archive config", "16", top_k=5) is not None
+
+    # Invalidate one of the cited passages
+    evicted = cache_mgr.invalidate_by_passage("pg16-wal-archive-mode")
+    assert evicted >= 1
+
+    # L3 entry must now be gone (stale — referenced passage changed)
+    assert cache_mgr.get_retrieval("archive config", "16", top_k=5) is None
+
+
+def test_get_stats_shape_and_clear_all(cache_mgr):
+    """get_stats() returns expected dict shape; clear_all() empties all 5 layers."""
+    cache_mgr.set_exact("Q", "A", [], "16")
+    cache_mgr.set_semantic("QS", [1.0, 0.0], "AS", [], "16")
+    cache_mgr.set_retrieval("QR", ["p1"], [0.9], "16")
+    cache_mgr.set_embedding("text chunk", [0.1, 0.2])
+    cache_mgr.set_claim("wal_level", "default", "16", "replica", "p1", "h1")
+
+    stats = cache_mgr.get_stats()
+    assert "sizes" in stats and "telemetry" in stats
+    assert stats["sizes"]["l1_exact"] == 1
+    assert stats["sizes"]["l2_semantic"] == 1
+    assert stats["sizes"]["l3_retrieval"] == 1
+    assert stats["sizes"]["l4_embedding"] == 1
+    assert stats["sizes"]["l5_claim"] == 1
+
+    cache_mgr.clear_all()
+    after = cache_mgr.get_stats()
+    assert all(v == 0 for v in after["sizes"].values())
+
+
+def test_hit_count_increments_on_l3_l4_l5(cache_mgr):
+    """hit_count increments on repeated reads for L3, L4, and L5 layers."""
+    # L3
+    cache_mgr.set_retrieval("Q3", ["p1"], [0.9], "16")
+    hit3a = cache_mgr.get_retrieval("Q3", "16")
+    hit3b = cache_mgr.get_retrieval("Q3", "16")
+    assert hit3a is not None and hit3b is not None
+    assert hit3b.hit_count == 2
+
+    # L4
+    cache_mgr.set_embedding("some text", [0.5, 0.5])
+    cache_mgr.get_embedding("some text")
+    cache_mgr.get_embedding("some text")
+    # L4 returns the raw vector list, so check via internal entry
+    key = cache_mgr._l4_embedding.get_and_touch(
+        __import__("evidenceflow.cache.key_generator", fromlist=["generate_embedding_key"]).generate_embedding_key("some text")
+    )
+    assert key.hit_count == 2
+
+    # L5
+    cache_mgr.set_claim("shared_buffers", "default", "16", "128MB", "p2", "h2")
+    cache_mgr.get_claim("shared_buffers", "default", "16")
+    hit5 = cache_mgr.get_claim("shared_buffers", "default", "16")
+    assert hit5 is not None
+    assert hit5.hit_count == 2

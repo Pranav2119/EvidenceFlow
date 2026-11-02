@@ -102,3 +102,36 @@ def test_claim_key_generation():
     k2 = generate_claim_key(entity="SHARED_BUFFERS", attribute="default", version="16")
 
     assert k1 == k2 == "CLAIM:16:shared_buffers:default"
+
+
+def test_empty_and_whitespace_query_normalization():
+    """Empty string and whitespace-only queries both normalize to an empty string."""
+    assert normalize_query("") == ""
+    assert normalize_query("   ") == ""
+    assert normalize_query("\n\t  ") == ""
+    # Two whitespace-only queries must produce the same scope key (not crash)
+    k1 = generate_scope_key("   ", "16")
+    k2 = generate_scope_key("", "16")
+    assert k1 == k2, "Whitespace-only and empty queries must normalize identically"
+
+
+def test_none_target_versions_maps_to_any():
+    """target_versions=None maps to the literal sentinel 'any' in the payload."""
+    k_none = generate_scope_key("What is wal_level?", target_versions=None)
+    k_any_str = generate_scope_key("What is wal_level?", target_versions="any")
+    # Both normalize to V:any — keys must be identical
+    assert k_none == k_any_str, (
+        "None and the string 'any' must produce the same key "
+        "(both map to the sentinel 'any' in the HMAC payload)"
+    )
+
+
+def test_underscore_preserved_in_setting_names():
+    """Underscores in PostgreSQL setting names must survive normalization."""
+    k_underscore = generate_scope_key("What is shared_buffers default?", "16")
+    k_space = generate_scope_key("What is shared buffers default?", "16")
+    # 'shared_buffers' (setting name, underscore) != 'shared buffers' (plain words)
+    assert k_underscore != k_space, (
+        "Underscore in a setting name is significant and must produce a different "
+        "key from the space-separated form"
+    )
