@@ -88,6 +88,39 @@ def evaluate_input_guardrails(query: str) -> Tuple[bool, Optional[str], Optional
     return True, None, None
 
 
+def check_pre_resolution_guards(query: str) -> Tuple[bool, Optional[str], Optional[str]]:
+    """
+    Evaluates original follow-up query text before any conversational memory rewriting.
+    Applies strict prompt injection checks and explicit off-domain checks,
+    WITHOUT applying the general PostgreSQL keyword requirement so that
+    short legitimate follow-ups ('Does it require a restart?') are preserved.
+    """
+    cleaned = query.strip()
+    if not cleaned:
+        return False, "OUT_OF_SCOPE", "Input Guardrail: Query is empty."
+
+    # 1. Prompt Injection & Adversarial Directives
+    for pattern in INJECTION_PATTERNS:
+        if pattern.search(cleaned):
+            return False, "INJECTION", "Security Guardrail: Potential prompt injection or adversarial directive detected."
+
+    # 2. Explicit Off-Domain Query Indicators (e.g. "What is the capital of France? Is it Paris?")
+    for pattern in OFF_DOMAIN_PATTERNS:
+        if pattern.search(cleaned):
+            return False, "OUT_OF_SCOPE", "Scope Guardrail: Question is outside PostgreSQL technical documentation scope."
+
+    # 3. Conversational greetings / philosophical queries with zero domain context
+    casual_patterns = [
+        re.compile(r"^(?:hello|hi|hey|good\s+morning|good\s+evening)\b", re.IGNORECASE),
+        re.compile(r"\b(?:what\s+is\s+the\s+meaning\s+of\s+life|who\s+are\s+you)\b", re.IGNORECASE),
+    ]
+    for cp in casual_patterns:
+        if cp.search(cleaned):
+            return False, "OUT_OF_SCOPE", "Scope Guardrail: Conversational greetings must specify a PostgreSQL documentation topic."
+
+    return True, None, None
+
+
 def input_guardrail_node(state: EvidenceFlowState) -> Dict[str, Any]:
     """
     LangGraph node: Executes pre-flight security and domain boundary checks.
@@ -97,6 +130,14 @@ def input_guardrail_node(state: EvidenceFlowState) -> Dict[str, Any]:
     existing_audit = list(state.audit_trail)
 
     is_safe, error_code, fail_reason = evaluate_input_guardrails(query)
+
+    if is_safe and state.target_version and str(state.target_version) not in SUPPORTED_VERSIONS:
+        is_safe = False
+        error_code = "UNSUPPORTED_VERSION"
+        fail_reason = (
+            f"Unsupported Version: PostgreSQL version {state.target_version} is not indexed. "
+            f"EvidenceFlow currently supports versions {', '.join(sorted(SUPPORTED_VERSIONS))}."
+        )
 
     if not is_safe:
         audit_entry = {

@@ -104,6 +104,13 @@ def audit_node_wrapper(
                     if k not in {"prompt_tokens", "candidate_tokens", "total_tokens", "action", "node"}
                 }
 
+        # Isolate pure Gemini API latency for clean Tier 2 baseline [Rule m]
+        if node_name == "answer_writer" and decided_by == "llm":
+            pure_api_lat = details.get("gemini_pure_api_latency_ms")
+            if pure_api_lat is not None:
+                details["node_total_latency_ms"] = round(latency_ms, 3)
+                latency_ms = pure_api_lat
+
         # Write execution row to step_ledger
         try:
             record_step(

@@ -1,0 +1,694 @@
+{
+  "mode": "Gemini ON (Live LLM)",
+  "total_cases": 20,
+  "resolution_accuracy_count": 12,
+  "resolution_accuracy_pct": 60.0,
+  "false_triggers_count": 1,
+  "false_triggers_pct": 5.0,
+  "e2e_correct_count": 10,
+  "e2e_correct_pct": 50.0,
+  "category_breakdown": {
+    "explicit_setting_wins": {
+      "total": 2,
+      "res_pass": 1,
+      "false_triggers": 0,
+      "e2e_pass": 1
+    },
+    "explicit_version_wins": {
+      "total": 1,
+      "res_pass": 1,
+      "false_triggers": 0,
+      "e2e_pass": 1
+    },
+    "follow_up_no_pronoun": {
+      "total": 1,
+      "res_pass": 1,
+      "false_triggers": 0,
+      "e2e_pass": 1
+    },
+    "followup_after_refusal": {
+      "total": 2,
+      "res_pass": 2,
+      "false_triggers": 0,
+      "e2e_pass": 2
+    },
+    "multi_entity_ambiguous": {
+      "total": 1,
+      "res_pass": 1,
+      "false_triggers": 0,
+      "e2e_pass": 1
+    },
+    "multi_entity_plural": {
+      "total": 1,
+      "res_pass": 1,
+      "false_triggers": 0,
+      "e2e_pass": 1
+    },
+    "pronoun_plus_unsupported_version": {
+      "total": 1,
+      "res_pass": 0,
+      "false_triggers": 0,
+      "e2e_pass": 0
+    },
+    "pronoun_plus_version_change": {
+      "total": 1,
+      "res_pass": 0,
+      "false_triggers": 0,
+      "e2e_pass": 0
+    },
+    "pronoun_resolves": {
+      "total": 4,
+      "res_pass": 3,
+      "false_triggers": 0,
+      "e2e_pass": 2
+    },
+    "pronoun_version_carry": {
+      "total": 1,
+      "res_pass": 0,
+      "false_triggers": 0,
+      "e2e_pass": 0
+    },
+    "pronoun_word_not_followup": {
+      "total": 2,
+      "res_pass": 2,
+      "false_triggers": 0,
+      "e2e_pass": 1
+    },
+    "pronoun_word_offtopic": {
+      "total": 1,
+      "res_pass": 0,
+      "false_triggers": 1,
+      "e2e_pass": 0
+    },
+    "version_change_question": {
+      "total": 1,
+      "res_pass": 0,
+      "false_triggers": 0,
+      "e2e_pass": 0
+    },
+    "version_switch_missing": {
+      "total": 1,
+      "res_pass": 0,
+      "false_triggers": 0,
+      "e2e_pass": 0
+    }
+  },
+  "rows": [
+    {
+      "id": "f01",
+      "category": "pronoun_resolves",
+      "exp_res": {
+        "status": "resolved",
+        "setting": "autovacuum_max_workers",
+        "version": "16"
+      },
+      "act_res": {
+        "status": "resolved",
+        "setting": "autovacuum_max_workers",
+        "version": "16"
+      },
+      "rewritten_query": "What is the configuration and behavior of autovacuum_max_workers in PostgreSQL 16?",
+      "resolution_pass": true,
+      "is_false_trigger": false,
+      "exp_outcome": "answer",
+      "act_outcome": "answer",
+      "act_code": null,
+      "values_found": [],
+      "expected_values": [],
+      "e2e_pass": true,
+      "notes": "Docs say this can only be set at server start. Judge the answer by eye."
+    },
+    {
+      "id": "f02",
+      "category": "pronoun_plus_version_change",
+      "exp_res": {
+        "status": "resolved",
+        "setting": "max_wal_senders",
+        "version": "16"
+      },
+      "act_res": {
+        "status": "passthrough",
+        "setting": null,
+        "version": "16"
+      },
+      "rewritten_query": "What is its default in version 16?",
+      "resolution_pass": false,
+      "is_false_trigger": false,
+      "exp_outcome": "answer",
+      "act_outcome": "abstain",
+      "act_code": "ABSTAINED",
+      "values_found": [],
+      "expected_values": [
+        "10"
+      ],
+      "e2e_pass": false,
+      "notes": "Setting comes from memory. The explicit version 16 in the new question wins over the earlier 15."
+    },
+    {
+      "id": "f03",
+      "category": "pronoun_version_carry",
+      "exp_res": {
+        "status": "resolved",
+        "setting": "hot_standby",
+        "version": "14"
+      },
+      "act_res": {
+        "status": "ambiguous",
+        "setting": null,
+        "version": null
+      },
+      "rewritten_query": null,
+      "resolution_pass": false,
+      "is_false_trigger": false,
+      "exp_outcome": "answer",
+      "act_outcome": "clarify",
+      "act_code": "AMBIGUOUS_FOLLOWUP",
+      "values_found": [
+        "on"
+      ],
+      "expected_values": [
+        "on"
+      ],
+      "e2e_pass": false,
+      "notes": "No version in turn 2, so the version must carry over from turn 1 (14), not fall back to 16. Answer must cite a pg14 chunk."
+    },
+    {
+      "id": "f04",
+      "category": "pronoun_resolves",
+      "exp_res": {
+        "status": "resolved",
+        "setting": "archive_mode",
+        "version": "16"
+      },
+      "act_res": {
+        "status": "resolved",
+        "setting": "archive_mode",
+        "version": "16"
+      },
+      "rewritten_query": "What is the configuration and behavior of archive_mode in PostgreSQL 16?",
+      "resolution_pass": true,
+      "is_false_trigger": false,
+      "exp_outcome": "answer",
+      "act_outcome": "abstain",
+      "act_code": "VALUE_MISMATCH",
+      "values_found": [
+        "off"
+      ],
+      "expected_values": [
+        "off"
+      ],
+      "e2e_pass": false,
+      "notes": ""
+    },
+    {
+      "id": "f05",
+      "category": "pronoun_resolves",
+      "exp_res": {
+        "status": "resolved",
+        "setting": "max_locks_per_transaction",
+        "version": "15"
+      },
+      "act_res": {
+        "status": "ambiguous",
+        "setting": null,
+        "version": null
+      },
+      "rewritten_query": null,
+      "resolution_pass": false,
+      "is_false_trigger": false,
+      "exp_outcome": "answer",
+      "act_outcome": "clarify",
+      "act_code": "AMBIGUOUS_FOLLOWUP",
+      "values_found": [],
+      "expected_values": [
+        "64"
+      ],
+      "e2e_pass": false,
+      "notes": "Pronoun phrase is 'this parameter' (not 'that' or 'it')."
+    },
+    {
+      "id": "f06",
+      "category": "pronoun_resolves",
+      "exp_res": {
+        "status": "resolved",
+        "setting": "log_min_duration_statement",
+        "version": "16"
+      },
+      "act_res": {
+        "status": "resolved",
+        "setting": "log_min_duration_statement",
+        "version": "16"
+      },
+      "rewritten_query": "What is the configuration and behavior of log_min_duration_statement in PostgreSQL 16?",
+      "resolution_pass": true,
+      "is_false_trigger": false,
+      "exp_outcome": "answer",
+      "act_outcome": "answer",
+      "act_code": null,
+      "values_found": [
+        "-1"
+      ],
+      "expected_values": [
+        "-1"
+      ],
+      "e2e_pass": true,
+      "notes": "The value to match is the negative number -1. Check the verifier does not choke on the minus sign."
+    },
+    {
+      "id": "f07",
+      "category": "follow_up_no_pronoun",
+      "exp_res": {
+        "status": "resolved",
+        "setting": "log_checkpoints",
+        "version": "16"
+      },
+      "act_res": {
+        "status": "resolved",
+        "setting": "log_checkpoints",
+        "version": "16"
+      },
+      "rewritten_query": "What is the configuration and behavior of log_checkpoints in PostgreSQL 16?",
+      "resolution_pass": true,
+      "is_false_trigger": false,
+      "exp_outcome": "answer",
+      "act_outcome": "answer",
+      "act_code": null,
+      "values_found": [
+        "on"
+      ],
+      "expected_values": [
+        "on"
+      ],
+      "e2e_pass": true,
+      "notes": "TRAP: there is no pronoun. A detector that only looks for it/that will miss this. If it fails, that is a finding, not a reason to edit this case."
+    },
+    {
+      "id": "f08",
+      "category": "version_switch_missing",
+      "exp_res": {
+        "status": "resolved",
+        "setting": "vacuum_buffer_usage_limit",
+        "version": "14"
+      },
+      "act_res": {
+        "status": "ambiguous",
+        "setting": null,
+        "version": null
+      },
+      "rewritten_query": null,
+      "resolution_pass": false,
+      "is_false_trigger": false,
+      "exp_outcome": "abstain",
+      "act_outcome": "clarify",
+      "act_code": "AMBIGUOUS_FOLLOWUP",
+      "values_found": [],
+      "expected_values": [],
+      "e2e_pass": false,
+      "notes": "Setting was added in 16. A correct system says it is not in 14. It must not answer from the 16 chunk."
+    },
+    {
+      "id": "f09",
+      "category": "version_change_question",
+      "exp_res": {
+        "status": "resolved",
+        "setting": "log_autovacuum_min_duration",
+        "version": "15"
+      },
+      "act_res": {
+        "status": "ambiguous",
+        "setting": null,
+        "version": null
+      },
+      "rewritten_query": null,
+      "resolution_pass": false,
+      "is_false_trigger": false,
+      "exp_outcome": "answer",
+      "act_outcome": "clarify",
+      "act_code": "AMBIGUOUS_FOLLOWUP",
+      "values_found": [],
+      "expected_values": [
+        "10min"
+      ],
+      "e2e_pass": false,
+      "notes": "VERIFY the real defaults (14 vs 15) on the docs pages before freezing. Answer must cite a pg15 chunk."
+    },
+    {
+      "id": "f10",
+      "category": "explicit_setting_wins",
+      "exp_res": {
+        "status": "passthrough",
+        "setting": "archive_mode",
+        "version": "16"
+      },
+      "act_res": {
+        "status": "passthrough",
+        "setting": "archive_mode",
+        "version": "16"
+      },
+      "rewritten_query": "What is archive_mode in PostgreSQL 16?",
+      "resolution_pass": true,
+      "is_false_trigger": false,
+      "exp_outcome": "answer",
+      "act_outcome": "answer",
+      "act_code": null,
+      "values_found": [
+        "off"
+      ],
+      "expected_values": [
+        "off"
+      ],
+      "e2e_pass": true,
+      "notes": ""
+    },
+    {
+      "id": "f11",
+      "category": "explicit_setting_wins",
+      "exp_res": {
+        "status": "passthrough",
+        "setting": "listen_addresses",
+        "version": "16"
+      },
+      "act_res": {
+        "status": "passthrough",
+        "setting": "listen_addresses",
+        "version": null
+      },
+      "rewritten_query": "What is the default of listen_addresses?",
+      "resolution_pass": false,
+      "is_false_trigger": false,
+      "exp_outcome": "answer",
+      "act_outcome": "answer",
+      "act_code": null,
+      "values_found": [],
+      "expected_values": [
+        "localhost"
+      ],
+      "e2e_pass": false,
+      "notes": "Contains 'the default' but no pronoun, and names a setting. Memory must not rewrite it."
+    },
+    {
+      "id": "f12",
+      "category": "explicit_version_wins",
+      "exp_res": {
+        "status": "passthrough",
+        "setting": "wal_level",
+        "version": "16"
+      },
+      "act_res": {
+        "status": "passthrough",
+        "setting": "wal_level",
+        "version": "16"
+      },
+      "rewritten_query": "What is wal_level in PostgreSQL 16?",
+      "resolution_pass": true,
+      "is_false_trigger": false,
+      "exp_outcome": "answer",
+      "act_outcome": "answer",
+      "act_code": null,
+      "values_found": [
+        "replica"
+      ],
+      "expected_values": [
+        "replica"
+      ],
+      "e2e_pass": true,
+      "notes": "Version must be 16 (explicit), not the 15 from turn 1."
+    },
+    {
+      "id": "f13",
+      "category": "pronoun_word_not_followup",
+      "exp_res": {
+        "status": "passthrough",
+        "setting": "shared_buffers",
+        "version": "16"
+      },
+      "act_res": {
+        "status": "passthrough",
+        "setting": "shared_buffers",
+        "version": "16"
+      },
+      "rewritten_query": "What does it mean to set shared_buffers too high in PostgreSQL 16?",
+      "resolution_pass": true,
+      "is_false_trigger": false,
+      "exp_outcome": "either",
+      "act_outcome": "abstain",
+      "act_code": "ABSTAINED",
+      "values_found": [],
+      "expected_values": [],
+      "e2e_pass": true,
+      "notes": "TRAP: the word 'it' appears but this is a new question. Answering or refusing is fine; rewriting it into autovacuum_naptime is a false trigger."
+    },
+    {
+      "id": "f14",
+      "category": "pronoun_word_not_followup",
+      "exp_res": {
+        "status": "passthrough",
+        "setting": "vacuum_defer_cleanup_age",
+        "version": "16"
+      },
+      "act_res": {
+        "status": "passthrough",
+        "setting": "vacuum_defer_cleanup_age",
+        "version": "16"
+      },
+      "rewritten_query": "Is it true that PostgreSQL 16 removed vacuum_defer_cleanup_age?",
+      "resolution_pass": true,
+      "is_false_trigger": false,
+      "exp_outcome": "answer",
+      "act_outcome": "abstain",
+      "act_code": "VALUE_MISMATCH",
+      "values_found": [],
+      "expected_values": [],
+      "e2e_pass": false,
+      "notes": "TRAP: 'it' and 'that' appear. The answer should come from the release-16 notes chunk and say it was removed."
+    },
+    {
+      "id": "f15",
+      "category": "pronoun_word_offtopic",
+      "exp_res": {
+        "status": "passthrough",
+        "setting": null,
+        "version": null
+      },
+      "act_res": {
+        "status": "ambiguous",
+        "setting": null,
+        "version": null
+      },
+      "rewritten_query": null,
+      "resolution_pass": false,
+      "is_false_trigger": true,
+      "exp_outcome": "abstain",
+      "act_outcome": "clarify",
+      "act_code": "AMBIGUOUS_FOLLOWUP",
+      "values_found": [],
+      "expected_values": [],
+      "e2e_pass": false,
+      "notes": "Memory must not turn this into a question about archive_mode."
+    },
+    {
+      "id": "f16",
+      "category": "followup_after_refusal",
+      "exp_res": {
+        "status": "ambiguous",
+        "setting": null,
+        "version": null
+      },
+      "act_res": {
+        "status": "ambiguous",
+        "setting": null,
+        "version": null
+      },
+      "rewritten_query": null,
+      "resolution_pass": true,
+      "is_false_trigger": false,
+      "exp_outcome": "clarify",
+      "act_outcome": "clarify",
+      "act_code": "AMBIGUOUS_FOLLOWUP",
+      "values_found": [],
+      "expected_values": [],
+      "e2e_pass": true,
+      "notes": "The earlier setting does not exist. Memory must not carry it forward as a real setting, and the system must not answer."
+    },
+    {
+      "id": "f17",
+      "category": "followup_after_refusal",
+      "exp_res": {
+        "status": "ambiguous",
+        "setting": null,
+        "version": null
+      },
+      "act_res": {
+        "status": "ambiguous",
+        "setting": null,
+        "version": null
+      },
+      "rewritten_query": null,
+      "resolution_pass": true,
+      "is_false_trigger": false,
+      "exp_outcome": "clarify",
+      "act_outcome": "clarify",
+      "act_code": "AMBIGUOUS_FOLLOWUP",
+      "values_found": [],
+      "expected_values": [],
+      "e2e_pass": true,
+      "notes": "Nothing from the refused turn may become memory."
+    },
+    {
+      "id": "f18",
+      "category": "multi_entity_ambiguous",
+      "exp_res": {
+        "status": "ambiguous",
+        "setting": null,
+        "version": "16"
+      },
+      "act_res": {
+        "status": "ambiguous",
+        "setting": null,
+        "version": null
+      },
+      "rewritten_query": null,
+      "resolution_pass": true,
+      "is_false_trigger": false,
+      "exp_outcome": "clarify",
+      "act_outcome": "clarify",
+      "act_code": "AMBIGUOUS_FOLLOWUP",
+      "values_found": [],
+      "expected_values": [],
+      "e2e_pass": true,
+      "notes": "The clarifying question should name both settings."
+    },
+    {
+      "id": "f19",
+      "category": "multi_entity_plural",
+      "exp_res": {
+        "status": "resolved_multi_or_ambiguous",
+        "setting": null,
+        "version": "16"
+      },
+      "act_res": {
+        "status": "resolved",
+        "setting": "autovacuum_max_workers",
+        "version": "16"
+      },
+      "rewritten_query": "What is the configuration and behavior of autovacuum_max_workers in PostgreSQL 16?",
+      "resolution_pass": true,
+      "is_false_trigger": false,
+      "exp_outcome": "either",
+      "act_outcome": "answer",
+      "act_code": null,
+      "values_found": [],
+      "expected_values": [],
+      "e2e_pass": true,
+      "notes": "Plural pronoun. Fine to resolve both and answer (autovacuum_max_workers needs a server start) or to ask. Picking one setting and ignoring the other is a failure. Verify the docs wording first."
+    },
+    {
+      "id": "f20",
+      "category": "pronoun_plus_unsupported_version",
+      "exp_res": {
+        "status": "resolved",
+        "setting": "max_wal_senders",
+        "version": "99"
+      },
+      "act_res": {
+        "status": "ambiguous",
+        "setting": null,
+        "version": null
+      },
+      "rewritten_query": null,
+      "resolution_pass": false,
+      "is_false_trigger": false,
+      "exp_outcome": "abstain",
+      "act_outcome": "clarify",
+      "act_code": "AMBIGUOUS_FOLLOWUP",
+      "values_found": [],
+      "expected_values": [],
+      "e2e_pass": false,
+      "notes": "Memory supplies the setting, the explicit unsupported version must still be refused."
+    }
+  ],
+  "check_by_eye": [
+    {
+      "id": "f01",
+      "category": "pronoun_resolves",
+      "turn1_q": "What is autovacuum_max_workers in PostgreSQL 16?",
+      "turn2_q": "Does that setting require a restart?",
+      "rewritten_q": "What is the configuration and behavior of autovacuum_max_workers in PostgreSQL 16?",
+      "draft_answer": "The configuration and behavior of `autovacuum_max_workers` are as follows:\n\n* **Definition and Limits:** It specifies the maximum number of autovacuum processes (excluding the autovacuum launcher) that may run at any one time [^pg16-runtime-config-autovacuum-autovacuum-max-workers].\n* **Default Value:** The default value is three [^pg16-runtime-config-autovacuum-autovacuum-max-workers].\n* **Setting Restrictions:** This parameter can only be set at server start [^pg16-runtime-config-autovacuum-autovacuum-max-workers].\n* **Memory Allocation Considerations:** When autovacuum runs, up to `autovacuum_max_workers` times the memory specified by `maintenance_work_mem` may be allocated, so care should be taken not to set the default `maintenance_work_mem` value too high (though this can be separately controlled by setting `autovacuum_work_mem`) [^pg16-runtime-config-resource-maintenance-work-mem].",
+      "citations": [
+        "pg16-runtime-config-autovacuum-autovacuum-max-workers",
+        "pg16-runtime-config-resource-maintenance-work-mem"
+      ],
+      "is_abstained": false,
+      "abstention_code": null,
+      "notes": "Docs say this can only be set at server start. Judge the answer by eye."
+    },
+    {
+      "id": "f09",
+      "category": "version_change_question",
+      "turn1_q": "What is log_autovacuum_min_duration in PostgreSQL 14?",
+      "turn2_q": "Did that change in 15?",
+      "rewritten_q": null,
+      "draft_answer": "I cannot provide an answer for this question.\n\n- **Scope**: PostgreSQL 16\n- **Status**: ABSTAINED (High Integrity Guardrail)\n- **Code**: AMBIGUOUS_FOLLOWUP\n- **Reason**: I couldn't determine which parameter you are referring to. Which setting would you like to check?\n\n*EvidenceFlow AI adheres to strict groundedness: answers are only generated when verifiable evidence exists in official documentation.*",
+      "citations": [],
+      "is_abstained": true,
+      "abstention_code": "AMBIGUOUS_FOLLOWUP",
+      "notes": "VERIFY the real defaults (14 vs 15) on the docs pages before freezing. Answer must cite a pg15 chunk."
+    },
+    {
+      "id": "f13",
+      "category": "pronoun_word_not_followup",
+      "turn1_q": "What is autovacuum_naptime in PostgreSQL 16?",
+      "turn2_q": "What does it mean to set shared_buffers too high in PostgreSQL 16?",
+      "rewritten_q": "What does it mean to set shared_buffers too high in PostgreSQL 16?",
+      "draft_answer": "I cannot provide an answer for this question.\n\n- **Scope**: PostgreSQL 16\n- **Status**: ABSTAINED (High Integrity Guardrail)\n- **Code**: ABSTAINED\n- **Reason**: Model declared insufficient evidence in retrieved passages.\n\n*EvidenceFlow AI adheres to strict groundedness: answers are only generated when verifiable evidence exists in official documentation.*",
+      "citations": [],
+      "is_abstained": true,
+      "abstention_code": "ABSTAINED",
+      "notes": "TRAP: the word 'it' appears but this is a new question. Answering or refusing is fine; rewriting it into autovacuum_naptime is a false trigger."
+    },
+    {
+      "id": "f14",
+      "category": "pronoun_word_not_followup",
+      "turn1_q": "What is hot_standby in PostgreSQL 16?",
+      "turn2_q": "Is it true that PostgreSQL 16 removed vacuum_defer_cleanup_age?",
+      "rewritten_q": "Is it true that PostgreSQL 16 removed vacuum_defer_cleanup_age?",
+      "draft_answer": "I cannot provide an answer for this question.\n\n- **Scope**: PostgreSQL 16\n- **Status**: ABSTAINED (High Integrity Guardrail)\n- **Code**: VALUE_MISMATCH\n- **Reason**: L1.5/L2 Value Verification Failed: Values ['true'] do not appear in cited passage. in source passage 'pg16-release-16-c86f660e37'.\n- **Guidance**: The cited configuration value or setting parameter does not match the official documentation passage.\n\n*EvidenceFlow AI adheres to strict groundedness: answers are only generated when verifiable evidence exists in official documentation.*",
+      "citations": [],
+      "is_abstained": true,
+      "abstention_code": "VALUE_MISMATCH",
+      "notes": "TRAP: 'it' and 'that' appear. The answer should come from the release-16 notes chunk and say it was removed."
+    },
+    {
+      "id": "f18",
+      "category": "multi_entity_ambiguous",
+      "turn1_q": "What are the defaults of max_wal_senders and max_replication_slots in PostgreSQL 16?",
+      "turn2_q": "Does it require a restart?",
+      "rewritten_q": null,
+      "draft_answer": "I cannot provide an answer for this question.\n\n- **Scope**: PostgreSQL 16\n- **Status**: ABSTAINED (High Integrity Guardrail)\n- **Code**: AMBIGUOUS_FOLLOWUP\n- **Reason**: I couldn't determine which parameter you are referring to. Which setting would you like to check?\n\n*EvidenceFlow AI adheres to strict groundedness: answers are only generated when verifiable evidence exists in official documentation.*",
+      "citations": [],
+      "is_abstained": true,
+      "abstention_code": "AMBIGUOUS_FOLLOWUP",
+      "notes": "The clarifying question should name both settings."
+    },
+    {
+      "id": "f19",
+      "category": "multi_entity_plural",
+      "turn1_q": "What are the defaults of autovacuum_naptime and autovacuum_max_workers in PostgreSQL 16?",
+      "turn2_q": "Which of those needs a restart?",
+      "rewritten_q": "What is the configuration and behavior of autovacuum_max_workers in PostgreSQL 16?",
+      "draft_answer": "The configuration and behavior of `autovacuum_max_workers` are as follows:\n\n* **Definition and Function:** It specifies the maximum number of autovacuum processes (excluding the autovacuum launcher) that may be running at any one time [^pg16-runtime-config-autovacuum-autovacuum-max-workers].\n* **Default Value:** The default is three [^pg16-runtime-config-autovacuum-autovacuum-max-workers].\n* **Setting Restrictions:** This parameter can only be set at server start [^pg16-runtime-config-autovacuum-autovacuum-max-workers].\n* **Memory Interaction:** When autovacuum runs, up to `autovacuum_max_workers` times the `maintenance_work_mem` memory may be allocated (unless separately controlled by setting `autovacuum_work_mem`) [^pg16-runtime-config-resource-maintenance-work-mem].",
+      "citations": [
+        "pg16-runtime-config-autovacuum-autovacuum-max-workers",
+        "pg16-runtime-config-resource-maintenance-work-mem"
+      ],
+      "is_abstained": false,
+      "abstention_code": null,
+      "notes": "Plural pronoun. Fine to resolve both and answer (autovacuum_max_workers needs a server start) or to ask. Picking one setting and ignoring the other is a failure. Verify the docs wording first."
+    }
+  ],
+  "code_git_commit": "d7d5fa8",
+  "dataset_file": "data/benchmarks/followup_holdout_20.json",
+  "dataset_sha256": "a4633e20fb769579309ddbaa2c892fa77002e2eed1857784b67729c0e39f31d9",
+  "dataset_git_commit": "50fa72b"
+}

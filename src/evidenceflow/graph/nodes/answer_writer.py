@@ -7,7 +7,7 @@ deterministic passage extraction for offline/zero-cost environments.
 import re
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import httpx
 from evidenceflow.config import get_settings
 from evidenceflow.state import EvidenceFlowState, Citation
@@ -46,7 +46,9 @@ def build_grounded_prompt(query: str, version: str, passages: List[Dict[str, Any
         f"1. Every factual statement must cite its source chunk ID using Markdown footnote format: [^chunk_id].\n"
         f"   Example: 'The default value of vacuum_cost_limit is 200 [^pg16-runtime-config-resource-vacuum-cost-limit].'\n"
         f"2. Do NOT invent, assume, or extrapolate any values, units, or parameter settings.\n"
-        f"3. If the provided passages do not contain the answer, respond: 'Insufficient evidence in the documentation.'\n\n"
+        f"3. If the provided passages do not contain the answer, respond: 'Insufficient evidence in the documentation.'\n"
+        f"4. For comparative questions across versions (e.g. 'Is it the same in 16?', 'Did it change?'):\n"
+        f"   Answer with the documented value for the target version and cite its passage chunk. If an earlier version's passage is present, compare them; otherwise state the target version's value directly and note that the earlier version cannot be confirmed from the retrieved text. Do NOT abstain when the target version's passage contains the answer.\n\n"
         f"USER QUESTION: {query}\n"
         f"POSTGRESQL VERSION SCOPE: {version}\n\n"
         f"DOCUMENTATION PASSAGES:\n{context}\n\n"
@@ -55,21 +57,47 @@ def build_grounded_prompt(query: str, version: str, passages: List[Dict[str, Any
     return prompt
 
 
-def deterministic_fallback_answer(query: str, version: str, passages: List[Dict[str, Any]]) -> str:
+class FallbackAnswer(str):
+    """
+    Subclass of str supporting backward compatibility with Day 4 string assertions
+    while allowing Day 8 tuple unpacking (answer_text, abstention_code).
+    """
+    abstention_code: Optional[str]
+
+    def __new__(cls, text: str, abstention_code: Optional[str] = None):
+        obj = super().__new__(cls, text)
+        obj.abstention_code = abstention_code
+        return obj
+
+    def __iter__(self):
+        return iter((str(self), self.abstention_code))
+
+
+def deterministic_fallback_answer(
+    query: str, version: str, passages: List[Dict[str, Any]]
+) -> FallbackAnswer:
     """
     Zero-LLM deterministic synthesis template.
-    Fails closed: Answers ONLY when the question explicitly names a setting that
-    appears in the retrieved passages; otherwise declares insufficient evidence.
+    Extracts substantive sentences from retrieved chunks answering the user's question.
+    Never outputs only a section header. If substantive evidence is missing,
+    abstains with a clear code [Rule i].
     """
     if not passages:
-        return f"Insufficient evidence in the PostgreSQL {version} documentation."
+        return FallbackAnswer(f"Insufficient evidence in the PostgreSQL {version} documentation.", "NO_SUBSTANTIVE_EVIDENCE")
 
     # Identify recognized setting names mentioned in query
-    from evidenceflow.storage.bm25 import get_bm25_index
+    from evidenceflow.memory.corpus_settings import get_corpus_settings
     try:
-        known_settings = get_bm25_index().setting_names
+        known_settings = get_corpus_settings()
     except Exception:
         known_settings = set()
+
+    if not known_settings:
+        from evidenceflow.storage.bm25 import get_bm25_index
+        try:
+            known_settings = get_bm25_index().setting_names
+        except Exception:
+            known_settings = set()
 
     words = set(re.findall(r"\b[a-z0-9_]+\b", query.lower()))
     named_settings = [w for w in words if w in known_settings or ("_" in w and len(w) > 3)]
@@ -80,7 +108,7 @@ def deterministic_fallback_answer(query: str, version: str, passages: List[Dict[
 
     if not named_settings:
         logger.info("Deterministic fallback: question does not name any indexed setting. Failing closed.")
-        return f"Insufficient evidence in the PostgreSQL {version} documentation."
+        return FallbackAnswer(f"Insufficient evidence in the PostgreSQL {version} documentation.", "NO_SUBSTANTIVE_EVIDENCE")
 
     # Find the best passage that contains one of the named settings
     best_passage = None
@@ -105,17 +133,110 @@ def deterministic_fallback_answer(query: str, version: str, passages: List[Dict[
 
     if not best_passage:
         logger.info("Deterministic fallback: named settings do not appear in retrieved chunks. Failing closed.")
-        return f"Insufficient evidence in the PostgreSQL {version} documentation."
+        return FallbackAnswer(f"Insufficient evidence in the PostgreSQL {version} documentation.", "NO_SUBSTANTIVE_EVIDENCE")
 
     cid = best_passage["chunk_id"]
     section = best_passage.get("section", "Documentation")
     content = best_passage.get("content", "").strip()
 
-    # Extract first 2 sentences or 250 characters
-    sentences = re.split(r"(?<=[.!?])\s+", content)
-    summary = " ".join(sentences[:2]) if sentences else content[:200]
+    # Strip pure leading headers (Section: ..., Parameter: ..., # ...)
+    body = re.sub(
+        r"^(?:Section:[^\n]*\n*|Parameter:[^\n]*\n*|#+[^\n]*\n*)+",
+        "",
+        content,
+        flags=re.IGNORECASE,
+    ).strip()
 
-    return f"According to PostgreSQL {version} documentation on {section}: {summary} [^{cid}]"
+    if not body:
+        return FallbackAnswer(f"Insufficient evidence in the PostgreSQL {version} documentation.", "NO_SUBSTANTIVE_EVIDENCE")
+
+    # Split into clean sentences using verifier's safe splitter [Rule i, j]
+    from evidenceflow.graph.nodes.verifier import split_sentences_safely
+    sentence_tuples = split_sentences_safely(body)
+    raw_sentences = [s.strip() for s, _ in sentence_tuples]
+
+    # Filter out non-substantive lines / section headers
+    substantive = []
+    for s in raw_sentences:
+        if s.lower().startswith(("section:", "parameter:", "###", "##")):
+            continue
+        words = s.split()
+        if len(words) < 4:
+            continue
+        # Must contain at least one verb or substantive technical keyword
+        if not re.search(
+            r"\b(is|are|was|were|sets?|specifies|determines|controls|allows|enables|causes|requires?|contains|defaults?|default|removed?|deprecated|can|cannot|changed?|change|restart|reloaded?|reload|set|configured?|configure|table)\b",
+            s,
+            re.IGNORECASE,
+        ):
+            continue
+        substantive.append(s)
+
+    if not substantive:
+        return FallbackAnswer(f"Insufficient evidence in the PostgreSQL {version} documentation.", "NO_SUBSTANTIVE_EVIDENCE")
+
+    q_lower = query.lower()
+    is_restart_q = bool(re.search(r"\b(restart|reload|postmaster|sighup)\b", q_lower))
+    is_per_table_q = bool(re.search(r"\b(per[\s-]table|table[\s-]level|per[\s-]database|relation)\b", q_lower))
+    is_default_q = bool(re.search(r"\b(defaults?|default\s+value|same)\b", q_lower))
+    is_remove_q = bool(re.search(r"\b(remove|removed|deprecated|obsolete)\b", q_lower))
+    is_change_q = bool(re.search(r"\b(who\s+can\s+change|can\s+i\s+change|change|changed|changing|modify|runtime|dynamically)\b", q_lower)) and not is_restart_q and not is_per_table_q
+
+    has_specific_attribute = is_restart_q or is_per_table_q or is_default_q or is_remove_q or is_change_q
+
+    scored = []
+    for idx, s in enumerate(substantive):
+        score = 0
+        s_lower = s.lower()
+        if is_restart_q and re.search(r"\b(restart|reload|postmaster|sighup|server\s+restart|configuration\s+file)\b", s_lower):
+            score += 25
+        if is_per_table_q and re.search(r"\b(per[\s-]table|table|tables|relation|relations)\b", s_lower):
+            score += 25
+        if is_default_q and re.search(r"\b(defaults?|default\s+value|default\s+is|is\s+the\s+default|defaults\s+to|is\s+on\b|is\s+off\b)\b", s_lower):
+            score += 25
+        if is_remove_q and re.search(r"\b(removed?|deprecated|obsolete)\b", s_lower):
+            score += 25
+        if is_change_q and re.search(r"\b(can\s+be\s+changed|cannot\s+be\s+changed|changed|set|context|superuser|session|runtime|reset)\b", s_lower):
+            score += 25
+
+        # Check if setting name appears in this sentence
+        for ns in named_settings:
+            if ns in s_lower or ns.replace("_", " ") in s_lower:
+                score += 5
+
+        # Plain "What is X" gets definition sentence (idx 0)
+        if not has_specific_attribute and idx == 0 and re.search(r"\b(sets|specifies|determines|controls|allows|enables|causes|is|are)\b", s_lower):
+            score += 15
+
+        scored.append((score, idx, s))
+
+    # If an attribute was asked, but no sentence matched that attribute, fail closed
+    if has_specific_attribute:
+        matching_scores = [score for score, _, _ in scored if score >= 25]
+        if not matching_scores:
+            attr_name = "restart" if is_restart_q else ("per-table" if is_per_table_q else ("default" if is_default_q else ("removal" if is_remove_q else "change")))
+            setting_name = named_settings[0] if named_settings else "the setting"
+            logger.info("Deterministic fallback: asked attribute '%s' not found in substantive sentences. Abstaining.", attr_name)
+            return FallbackAnswer(
+                f"Insufficient evidence in the PostgreSQL {version} documentation: does not specify {attr_name} behavior for {setting_name}.",
+                "NO_SUBSTANTIVE_EVIDENCE",
+            )
+
+    scored.sort(key=lambda x: (-x[0], x[1]))
+    best_score, best_idx, best_sent = scored[0]
+
+    # Clean numbered breadcrumbs from answer text (strip digits.digits codes e.g. '20.4. Resource Consumption' -> 'Resource Consumption')
+    clean_section = re.sub(r"\b(?:[A-Z]\.)?\d+(?:\.\d+)*\.?\s*", "", section).strip()
+    clean_section = re.sub(r"\s*>\s*", " > ", clean_section).strip()
+    if not clean_section:
+        clean_section = "Documentation"
+
+    summary = best_sent
+    setting_label = named_settings[0] if named_settings else "the parameter"
+    return FallbackAnswer(
+        f"In PostgreSQL {version}, {setting_label} is documented under {clean_section}.\n\n{summary} [^{cid}]",
+        None,
+    )
 
 
 def extract_citations(answer: str, passages: List[Dict[str, Any]]) -> List[Citation]:
@@ -123,7 +244,14 @@ def extract_citations(answer: str, passages: List[Dict[str, Any]]) -> List[Citat
     Extracts all [^chunk_id] citation markers from the answer and maps them to Citation models.
     D3-4 fix: Constructs strongly-typed Citation Pydantic instances.
     """
-    cited_ids = re.findall(r"\[\^([^\]]+)\]", answer)
+    raw_blocks = re.findall(r"\[\^([^\]]+)\]", answer)
+    cited_ids = []
+    for block in raw_blocks:
+        parts = re.split(r"[,;\s]+", block)
+        for part in parts:
+            clean_cid = part.lstrip("^").strip()
+            if clean_cid:
+                cited_ids.append(clean_cid)
     passage_map = {p["chunk_id"]: p for p in passages}
 
     citations: List[Citation] = []
@@ -182,6 +310,7 @@ def answer_writer_node(state: EvidenceFlowState) -> Dict[str, Any]:
             "draft_answer": f"I cannot answer this question because no relevant documentation was found for PostgreSQL {target_version}.",
             "citations": [],
             "is_abstained": True,
+            "abstention_code": "ABSTAINED",
             "abstention_reason": reason,
             "synthesis_mode": "fallback",
             "audit_trail": existing_audit + [audit_entry],
@@ -191,6 +320,12 @@ def answer_writer_node(state: EvidenceFlowState) -> Dict[str, Any]:
     draft_answer = ""
     token_usage: Dict[str, Any] = {}
     synthesis_mode = "fallback"
+    abstention_code: Optional[str] = None
+    is_abstained: bool = False
+    abstention_reason: Optional[str] = None
+    pure_api_latency_ms: Optional[float] = None
+    total_sleep_ms: float = 0.0
+    attempts_count: int = 0
 
     # D3-1: Check for real API key
     if is_valid_gemini_key(settings.GEMINI_API_KEY):
@@ -201,19 +336,29 @@ def answer_writer_node(state: EvidenceFlowState) -> Dict[str, Any]:
             client = _get_writer_client(settings.GEMINI_API_KEY)
             prompt = build_grounded_prompt(query, target_version, passages)
 
-            # Retry up to 2 times on transient 503/429
+            # Retry up to 2 times on transient 503/429 with isolated pure API timing [Rule m]
             response = None
             max_attempts = 3
+            pure_api_latency_ms = 0.0
+            total_sleep_ms = 0.0
+            attempts_count = 0
             for attempt in range(1, max_attempts + 1):
+                attempts_count += 1
                 try:
+                    t_api_start = time.perf_counter()
                     response = client.models.generate_content(
                         model=settings.GEMINI_MODEL,
                         contents=prompt,
                     )
+                    pure_api_latency_ms += (time.perf_counter() - t_api_start) * 1000.0
                     break
                 except (APIError, ServerError, httpx.HTTPError) as err:
+                    pure_api_latency_ms += (time.perf_counter() - t_api_start) * 1000.0
                     if attempt < max_attempts and ("503" in str(err) or "429" in str(err) or "RemoteProtocolError" in str(err)):
-                        time.sleep(2.0 * attempt)
+                        sleep_duration = 2.0 * attempt
+                        t_sleep_start = time.perf_counter()
+                        time.sleep(sleep_duration)
+                        total_sleep_ms += (time.perf_counter() - t_sleep_start) * 1000.0
                         continue
                     raise
 
@@ -229,25 +374,38 @@ def answer_writer_node(state: EvidenceFlowState) -> Dict[str, Any]:
                         "total_tokens": getattr(response.usage_metadata, "total_token_count", 0),
                     }
             else:
-                draft_answer = deterministic_fallback_answer(query, target_version, passages)
+                draft_answer, fallback_code = deterministic_fallback_answer(query, target_version, passages)
                 synthesis_mode = "fallback"
+                if fallback_code:
+                    is_abstained = True
+                    abstention_code = fallback_code
+                    abstention_reason = f"Deterministic fallback could not answer query ({fallback_code})."
 
         # Catch GenAI and network/transport errors (including RemoteProtocolError)
         except (APIError, ClientError, ServerError, ConnectionError, TimeoutError, httpx.HTTPError, Exception) as e:
             logger.warning("Gemini generation API call failed (%s), falling back to deterministic synthesis.", e)
-            draft_answer = deterministic_fallback_answer(query, target_version, passages)
-            synthesis_mode = "fallback" 
+            draft_answer, fallback_code = deterministic_fallback_answer(query, target_version, passages)
+            synthesis_mode = "fallback"
+            if fallback_code:
+                is_abstained = True
+                abstention_code = fallback_code
+                abstention_reason = f"Deterministic fallback could not answer query ({fallback_code})." 
     else:
         logger.info("No active Gemini API key configured. Using deterministic synthesis.")
-        draft_answer = deterministic_fallback_answer(query, target_version, passages)
+        draft_answer, fallback_code = deterministic_fallback_answer(query, target_version, passages)
         synthesis_mode = "fallback"
+        if fallback_code:
+            is_abstained = True
+            abstention_code = fallback_code
+            abstention_reason = f"Deterministic fallback could not answer query ({fallback_code})."
 
-    # Check for LLM abstention statement
-    is_abstained = False
-    abstention_reason = None
+    # Check for LLM or fallback abstention statement
     if "insufficient evidence" in draft_answer.lower():
         is_abstained = True
-        abstention_reason = "Model declared insufficient evidence in retrieved passages."
+        if not abstention_code:
+            abstention_code = "ABSTAINED"
+        if not abstention_reason:
+            abstention_reason = "Model declared insufficient evidence in retrieved passages."
 
     # D3-4: strongly-typed Citation objects
     citations = extract_citations(draft_answer, passages)
@@ -258,6 +416,9 @@ def answer_writer_node(state: EvidenceFlowState) -> Dict[str, Any]:
         "citations_count": len(citations),
         "is_abstained": is_abstained,
         "synthesis_mode": synthesis_mode,
+        "gemini_pure_api_latency_ms": round(pure_api_latency_ms, 3) if pure_api_latency_ms is not None else None,
+        "gemini_attempts": attempts_count if synthesis_mode == "llm" else None,
+        "gemini_sleep_duration_ms": round(total_sleep_ms, 3) if synthesis_mode == "llm" else 0.0,
         **token_usage,
     }
 
@@ -265,6 +426,7 @@ def answer_writer_node(state: EvidenceFlowState) -> Dict[str, Any]:
         "draft_answer": draft_answer,
         "citations": citations,
         "is_abstained": is_abstained,
+        "abstention_code": abstention_code if is_abstained else None,
         "abstention_reason": abstention_reason,
         "synthesis_mode": synthesis_mode,
         "audit_trail": existing_audit + [audit_entry],

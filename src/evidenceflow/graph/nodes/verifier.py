@@ -84,36 +84,85 @@ def get_equivalent_quantities(val: str) -> Set[str]:
 def extract_claimed_values(statement: str) -> List[str]:
     """
     Extracts numeric quantities and configuration enum values from a claim statement.
-    Excludes bare single-digit numbers (to avoid false triggers on versions like '9.6' or '14.4.7').
+    Does NOT extract everyday words ('true', 'yes', 'off' in prose) as claimed values.
+    Only extracts boolean/state values when tied to a parameter name or 'default is' patterns [Rule f, j].
+    Strips citation preambles and section references (e.g. 20.5., 20.10., E.16.2.) before extraction.
     """
-    # 1. Numeric quantities with units (e.g. '128MB', '1min', '60s', '8kB') OR multi-digit integers ('100', '200', '400')
-    raw_quantities = re.findall(
-        r"\b\d+(?:\.\d+)?\s*(?:ms|min|kB|MB|GB|TB|pages|bytes|rows|s|h|d)\b|\b\d{2,}\b",
-        statement,
+    # Strip citation preamble, breadcrumbs, and section numbers
+    stmt_clean = re.sub(r"^According to PostgreSQL \d+ documentation on [^:]+:\s*", "", statement, flags=re.IGNORECASE)
+    stmt_clean = re.sub(r"^In PostgreSQL \d+, [^:]+ is documented under [^.\n]+(?:\.|\n)+", "", stmt_clean, flags=re.IGNORECASE)
+    # Strip Section N, Chapter N, Part N
+    stmt_clean = re.sub(r"\b(?:section|chapter|part|reference|references|ref)\s+[A-Za-z0-9.]+\b\.?", "", stmt_clean, flags=re.IGNORECASE)
+    # Strip parenthesized breadcrumbs containing section numbers e.g. (20.4. Resource Consumption)
+    stmt_clean = re.sub(r"\((?:[A-Za-z]\.|\d+\.)[^)]*\)", "", stmt_clean)
+    # Strip letter-prefixed appendix references like E.16.2. or A.1.
+    stmt_clean = re.sub(r"\b[A-Za-z]\.\d+(?:\.\d+)*\.?", "", stmt_clean)
+    # Strip multi-part sections with 2+ dots like 20.4.1 or 20.4.1.
+    stmt_clean = re.sub(r"\b\d+\.\d+\.\d+(?:\.\d+)*\.?", "", stmt_clean)
+    # Strip section numbers with trailing dot when followed by capitalized words (breadcrumbs) e.g. 20.5. Resource Consumption
+    stmt_clean = re.sub(r"\b\d+\.\d+\.\s+(?=[A-Z])", "", stmt_clean)
+    stmt_lower = stmt_clean.lower()
+    filtered = []
+
+    # 1. Numeric quantities with units, negative numbers (-1), decimals (4.0MB), or multi-digit integers
+    raw_nums = re.findall(
+        r"(?<![a-z0-9_])-?\d+(?:\.\d+)?\s*(?:ms|min|kB|MB|GB|TB|pages|bytes|rows|s|h|d)?\b",
+        stmt_clean,
         re.IGNORECASE,
     )
-    # Filter out common PostgreSQL versions
-    filtered = [
-        q.strip().lower()
-        for q in raw_quantities
-        if q.strip() not in {"14", "15", "16"}
-    ]
+    for n in raw_nums:
+        n_clean = n.strip().lower()
+        if n_clean in {"14", "15", "16", "14.", "15.", "16."}:
+            continue
+        has_unit = any(n_clean.endswith(u) for u in ["ms", "min", "kb", "mb", "gb", "tb", "pages", "bytes", "rows", "s", "h", "d"])
+        is_negative = n_clean.startswith("-") and len(n_clean) > 1
+        has_decimal = "." in n_clean
+        is_multi_digit = re.fullmatch(r"\d{2,}", n_clean) is not None
+        if has_unit or is_negative or has_decimal or is_multi_digit:
+            filtered.append(n_clean)
 
     # 2. Domain enum values (e.g., 'replica', 'logical', 'minimal')
-    stmt_lower = statement.lower()
     for enum_val in RECOGNIZED_ENUM_VALUES:
         if re.search(r"\b" + re.escape(enum_val) + r"\b", stmt_lower):
             filtered.append(enum_val)
 
-    # 3. Explicit boolean / state assertions (e.g. 'is on', 'defaults to off', '= on')
+    # 3. Explicit boolean / state assertions ONLY when tied to default or parameter pattern [Rule f, j]
     bool_states = re.findall(
-        r"\b(?:is|to|set\s+to|defaults?\s+to|=)\s+(on|off|true|false)\b",
+        r"\b(?:defaults?\s+(?:value\s+)?(?:is|to|=|\:)|defaults?\s+to|\b[a-z][a-z0-9]*_[a-z0-9_]+\s+(?:is|set\s+to|=|defaults?\s+to))\s+(on|off|true|false)\b",
         stmt_lower,
     )
     for bs in bool_states:
         filtered.append(bs.lower())
 
     return list(dict.fromkeys(filtered))
+
+
+def split_sentences_safely(text: str) -> List[Tuple[str, int]]:
+    """
+    Splits passage text into grammatical sentences preserving:
+      - Floating point decimals (e.g. 4.0, 0.2, 1.5)
+      - Negative numbers (-1, -100)
+      - Common technical abbreviations (e.g., i.e., etc., vs.)
+      - Paragraph boundaries
+    Returns list of (sentence_text, start_char_index)
+    """
+    p_normalized = re.sub(r"(?<!\n)\n(?!\n)", " ", text)
+    split_pattern = re.compile(
+        r"(?:\n\s*\n+|(?<!\d)(?<!\be\.g)(?<!\bi\.e)(?<!\betc)(?<!\bvs)(?<!\bp)\.(?!\d)(?=\s+[A-Z0-9\-\"'\(\[]|\s*$)|[!?:;]+(?=\s+[A-Z0-9\-\"'\(\[]|\s*$))",
+        re.IGNORECASE,
+    )
+    sentences = []
+    last_end = 0
+    for m in split_pattern.finditer(p_normalized):
+        end = m.end()
+        stmt = p_normalized[last_end:end].strip()
+        if stmt:
+            sentences.append((stmt, last_end))
+        last_end = end
+    tail = p_normalized[last_end:].strip()
+    if tail:
+        sentences.append((tail, last_end))
+    return sentences
 
 
 def split_answer_into_citation_statements(draft_answer: str) -> List[Tuple[str, List[str]]]:
@@ -224,33 +273,58 @@ def verify_statement_value_presence(
     # Extract any snake_case parameter names present in the statement
     stmt_params = re.findall(r"\b[a-z][a-z0-9]*_[a-z0-9_]+\b", statement.lower())
 
-    # Determine attribute from statement (ignoring setting names with underscores)
-    stmt_clean = re.sub(r"\b[a-z][a-z0-9]*_[a-z0-9_]+\b", "", statement.lower())
-    attr = None
-    if re.search(r"\bdefaults?\b", stmt_clean):
-        attr = "default"
-    elif re.search(r"\bmaximum\b|\bmax\b|\bupper\b", stmt_clean):
-        attr = "maximum"
-    elif re.search(r"\bminimum\b|\bmin\b|\blower\b", stmt_clean):
-        attr = "minimum"
-    elif re.search(r"\brange\b|\bbetween\b", stmt_clean):
-        attr = "range"
+    # Bind each claimed value to the nearest attribute word in its own clause
+    raw_clauses = re.split(r"[,;]|\b(?:and|but|while|whereas)\b", statement, flags=re.IGNORECASE)
+    attr_keywords = {
+        "default": [r"\bdefaults?\b"],
+        "maximum": [r"\bmaximum\b", r"\bmax\b", r"\bupper\s+limit\b", r"\bupper\b"],
+        "minimum": [r"\bminimum\b", r"\bmin\b", r"\blower\s+limit\b", r"\blower\b"],
+        "range": [r"\brange\b", r"\bbetween\b", r"\bvalid\s+range\b"],
+    }
+    val_to_attr = {}
+    for val in claimed_values:
+        val_clean = val.lower().strip()
+        equivs = get_equivalent_quantities(val_clean)
+        equivs_norm = {normalize_text(e) for e in equivs}
+        bound_attr = None
+        for clause in raw_clauses:
+            clause_norm = normalize_text(clause)
+            has_val = any(e in clause_norm or re.search(r"\b" + re.escape(e) + r"\b", clause_norm) for e in equivs_norm)
+            if not has_val:
+                m_dig = re.search(r"\d+", val_clean)
+                if m_dig and re.search(r"\b" + m_dig.group(0) + r"\b", clause_norm):
+                    has_val = True
+            if has_val:
+                for attr_name, patterns in attr_keywords.items():
+                    if any(re.search(pat, clause_norm) for pat in patterns):
+                        bound_attr = attr_name
+                        break
+                if bound_attr:
+                    break
+        if not bound_attr:
+            stmt_norm = normalize_text(statement)
+            best_dist = float("inf")
+            for attr_name, patterns in attr_keywords.items():
+                for pat in patterns:
+                    for m_attr in re.finditer(pat, stmt_norm):
+                        m_dig = re.search(r"\d+", val_clean)
+                        if m_dig:
+                            for m_val in re.finditer(r"\b" + m_dig.group(0) + r"\b", stmt_norm):
+                                dist = abs(m_val.start() - m_attr.start())
+                                if dist < best_dist:
+                                    best_dist = dist
+                                    bound_attr = attr_name
+        val_to_attr[val] = bound_attr
 
     # Find all setting parameter positions in the chunk
     chunk_params = []
     for m in re.finditer(r"\b[a-z][a-z0-9]*_[a-z0-9_]+\b", passage_content.lower()):
         chunk_params.append((m.start(), m.group(0)))
 
-    # Split into sentences preserving paragraph structure and single-line wraps
-    p_normalized_breaks = re.sub(r"(?<!\n)\n(?!\n)", " ", passage_content)
-    raw_sentences = []
-    sentence_positions = []
-    for m in re.finditer(r"[^.\n!?]+(?:\.|\n{2,}|!|\?|$)", p_normalized_breaks):
-        s = m.group(0).strip()
-        if s:
-            raw_sentences.append(s)
-            sentence_positions.append(m.start())
-
+    # Split into sentences preserving paragraph structure, decimals, and abbreviations [Rule j]
+    sentence_tuples = split_sentences_safely(passage_content)
+    raw_sentences = [s for s, _ in sentence_tuples]
+    sentence_positions = [pos for _, pos in sentence_tuples]
     norm_sentences = [normalize_text(s) for s in raw_sentences]
 
     missing_values = []
@@ -262,7 +336,7 @@ def verify_statement_value_presence(
         matching_sentences = []
         for raw_s, norm_s, pos in zip(raw_sentences, norm_sentences, sentence_positions):
             has_val = any(
-                re.search(r"\b" + re.escape(c) + r"\b", norm_s) or c in norm_s
+                re.search(r"(?<!\w)" + re.escape(c) + r"\b", norm_s) or c in norm_s
                 for c in norm_candidates
             )
             if has_val:
@@ -289,30 +363,34 @@ def verify_statement_value_presence(
         else:
             target_p = None
 
-        # In multi-setting chunks: ensure value belongs to the claimed setting
-        if target_p and chunk_params and len(set(p for _, p in chunk_params)) > 1:
-            setting_matched = any(
-                active_p == target_p or (primary_chunk_setting and active_p == primary_chunk_setting)
-                for _, _, active_p in matching_sentences
-                if active_p
-            )
-            if not setting_matched:
-                active_p_found = matching_sentences[0][2] or "another setting"
-                return (
-                    [val],
-                    f"Value '{val}' appears in passage, but belongs to setting '{active_p_found}', not '{target_p}'.",
+        # In multi-setting chunks: ensure value belongs to the claimed setting.
+        # Single-setting chunks (where target_p is the primary chunk setting) do not fail
+        # when other parameters are mentioned in explanatory prose [Rule j].
+        if target_p and not (primary_chunk_setting and target_p == primary_chunk_setting):
+            if chunk_params and len(set(p for _, p in chunk_params)) > 1:
+                setting_matched = any(
+                    active_p == target_p
+                    for _, _, active_p in matching_sentences
+                    if active_p
                 )
+                if not setting_matched:
+                    active_p_found = matching_sentences[0][2] or "another setting"
+                    return (
+                        [val],
+                        f"Value '{val}' appears in passage, but belongs to setting '{active_p_found}', not '{target_p}'.",
+                    )
 
-        # If statement asserted an attribute (e.g. default / max / min / range),
+        # If value is bound to an attribute (e.g. default / max / min / range),
         # verify that at least one sentence containing the value contains that attribute
-        if attr:
+        val_attr = val_to_attr.get(val)
+        if val_attr:
             attr_patterns = {
                 "default": [r"\bdefaults?\b"],
                 "maximum": [r"\bmaximum\b", r"\bmax\b", r"\bupper\s+limit\b"],
                 "minimum": [r"\bminimum\b", r"\bmin\b", r"\blower\s+limit\b"],
                 "range": [r"\brange\b", r"\bbetween\b", r"\bto\b"],
             }
-            patterns = attr_patterns[attr]
+            patterns = attr_patterns[val_attr]
             attr_matched = any(
                 any(re.search(pat, norm_s) for pat in patterns)
                 for _, norm_s, _ in matching_sentences
@@ -320,7 +398,7 @@ def verify_statement_value_presence(
             if not attr_matched:
                 return (
                     [val],
-                    f"Value '{val}' appears in passage, but does not match claimed attribute '{attr}'.",
+                    f"Value '{val}' appears in passage, but does not match claimed attribute '{val_attr}'.",
                 )
 
     if missing_values:

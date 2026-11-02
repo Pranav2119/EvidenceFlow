@@ -16,6 +16,7 @@ COMMON_QUERY_STOPWORDS = {
     "configure", "setting", "parameter", "options", "value", "default", "explain",
     "show", "tell", "about", "describe", "find", "list", "between", "this", "that",
     "the", "and", "for", "are", "can", "should", "would", "could", "into", "also",
+    "same", "change", "changed", "different", "differ", "did", "still", "was", "is", "whether",
 }
 
 
@@ -137,6 +138,24 @@ def retriever_node(state: EvidenceFlowState, limit: Optional[int] = None) -> Dic
         if bm25_results:
             query_results.append(bm25_results)
             all_raw_passages.extend(bm25_results)
+
+    # Cross-version comparative retrieval [Item 5]
+    prior_version = getattr(state, "prior_version", None)
+    is_comparative = bool(
+        prior_version
+        and str(prior_version) != str(target_version)
+        and re.search(r"\b(same|change|changed|did\s+it|is\s+it\s+still|difference|differ)\b", query, re.IGNORECASE)
+    )
+    if is_comparative and prior_version in {"14", "15", "16"}:
+        for subquery in plan:
+            prior_dense = client.search(query=subquery, version=prior_version, limit=2)
+            prior_bm25 = bm25_idx.search(query=subquery, version=prior_version, limit=2)
+            if prior_dense:
+                query_results.append(prior_dense)
+                all_raw_passages.extend(prior_dense)
+            if prior_bm25:
+                query_results.append(prior_bm25)
+                all_raw_passages.extend(prior_bm25)
 
     # Guardrail Check 1: Empty retrieval results
     if not all_raw_passages:

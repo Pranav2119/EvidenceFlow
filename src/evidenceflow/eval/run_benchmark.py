@@ -1,12 +1,13 @@
 """
-run_benchmark.py: Comprehensive Tier 1 Benchmark Execution Runner for EvidenceFlow AI.
+run_benchmark.py: Comprehensive Tier 1 & Tier 2 Benchmark Execution Runner for EvidenceFlow AI.
 Evaluates version-grounded questions against the baseline pipeline, recording:
   - Guardrail Error Rates: Wrong Refusals (FP) and Wrong Answers (FN)
   - Information Retrieval (IR) Metrics: Recall@5, MRR (computed on answerable queries only)
   - Quality Metrics: Value Accuracy (with unit equivalence) & Citation Precision/Recall
   - Pipeline Self-Check: L1 Groundedness
   - Operational Latency: 3 repeats (warm-up discarded), Median and P95 latency (ms)
-Supports running Dev (40 questions) or Frozen Test (20 questions) splits with Gemini ON or OFF.
+Supports running Dev (40 questions) or Frozen Test (20 questions) splits with Gemini ON/OFF
+and Memory ON/OFF.
 """
 
 import argparse
@@ -84,6 +85,7 @@ def run_benchmark(
     repeats: int = 3,
     delay_seconds: float = 1.5,
     verbose: bool = True,
+    enable_memory: bool = False,
 ) -> Dict[str, Any]:
     """
     Executes the benchmark suite over the designated split or file.
@@ -106,10 +108,11 @@ def run_benchmark(
     total_q = len(questions)
 
     print("\n" + "=" * 76)
-    print(f" EvidenceFlow AI — Tier 1 Benchmark Execution ({split.upper()} Split)")
+    print(f" EvidenceFlow AI — Evaluation Benchmark ({split.upper()} Split)")
     print("=" * 76)
     print(f"Dataset File:     {file_path.name} ({total_q} questions)")
     print(f"Gemini Mode:      {'ON (Live LLM)' if gemini_enabled else 'OFF (Deterministic Fallback)'}")
+    print(f"Memory Mode:      {'ON (Neo4j Conversational Memory)' if enable_memory else 'OFF (Direct Single-Turn)'}")
     print(f"Latency Repeats:  {repeats} runs (warm-up discarded)")
     print(f"Query Pacing:     {delay_seconds}s delay")
     print(f"Score Threshold:  {settings.RETRIEVAL_SCORE_THRESHOLD}")
@@ -150,15 +153,24 @@ def run_benchmark(
         # -----------------------------------------------------------------
         # Latency Repeats: 1 Warm-up (discarded) + 'repeats' timed executions
         # -----------------------------------------------------------------
-        # Warm-up run
+        # Batch cooldown every 5 questions to refresh quota bucket
+        if gemini_enabled and idx > 1 and (idx - 1) % 5 == 0:
+            time.sleep(10.0)
+
+        # Warm-up run (with pacing delay)
+        if gemini_enabled and delay_seconds > 0:
+            time.sleep(delay_seconds)
+
         final_state = run_pipeline(
             query=query,
             version=version,
-            thread_id=f"bench_{split}_{qid}_warmup",
+            thread_id=f"bench-{split}-{qid}-warmup",
             use_postgres_checkpointer=False,
+            enable_memory=enable_memory,
         )
 
         timed_latencies = []
+        repeat_details = []
         for r in range(repeats):
             if gemini_enabled and delay_seconds > 0:
                 time.sleep(delay_seconds)
@@ -167,13 +179,31 @@ def run_benchmark(
             exec_state = run_pipeline(
                 query=query,
                 version=version,
-                thread_id=f"bench_{split}_{qid}_r{r}",
+                thread_id=f"bench-{split}-{qid}-r{r}",
                 use_postgres_checkpointer=False,
+                enable_memory=enable_memory,
             )
             t_end = time.perf_counter()
             duration_ms = (t_end - t_start) * 1000.0
             timed_latencies.append(duration_ms)
+
+            rep_mode = "unknown"
+            for entry in getattr(exec_state, "audit_trail", []):
+                if entry.get("node") == "answer_writer":
+                    rep_mode = entry.get("synthesis_mode", "unknown")
+                    break
+
+            repeat_details.append({
+                "repeat": r,
+                "latency_ms": round(duration_ms, 2),
+                "is_abstained": exec_state.is_abstained,
+                "abstention_code": exec_state.abstention_code,
+                "synthesis_mode": rep_mode,
+            })
             final_state = exec_state
+
+        is_stable = (len(set(rep["is_abstained"] for rep in repeat_details)) <= 1)
+        used_fallback = any(rep["synthesis_mode"] == "fallback" for rep in repeat_details)
 
         measured_latencies_all.extend(timed_latencies)
         median_lat = calculate_percentiles(timed_latencies, [50])[50]
@@ -221,9 +251,18 @@ def run_benchmark(
             # IR and Answer Quality metrics apply to answerable questions
             q_recall = calculate_recall_at_k(retrieved_passages, gt_chunks, gt_matcher, k=5)
             q_mrr = calculate_reciprocal_rank(retrieved_passages, gt_chunks, gt_matcher, k=5)
-            q_prec = calculate_citation_precision(citations, retrieved_ids)
-            q_crecall = calculate_citation_recall(draft_answer, citations)
-            q_val_acc = check_value_accuracy(draft_answer, expected_value)
+            q_draft_val_acc = check_value_accuracy(draft_answer, expected_value)
+
+            # Compute quality metrics on FINAL user-visible answer:
+            # If refused, the user sees an abstention notice with zero valid citations/values
+            if is_abstained:
+                q_prec = 0.0
+                q_crecall = 0.0
+                q_val_acc = False
+            else:
+                q_prec = calculate_citation_precision(citations, retrieved_ids)
+                q_crecall = calculate_citation_recall(draft_answer, citations)
+                q_val_acc = q_draft_val_acc
 
             recalls.append(q_recall)
             mrrs.append(q_mrr)
@@ -249,6 +288,9 @@ def run_benchmark(
             "abstention_code": abstention_code,
             "abstention_reason": abstention_reason,
             "error_class": error_class,
+            "repeat_details": repeat_details,
+            "is_stable": is_stable,
+            "used_fallback": used_fallback,
             "latencies_ms": timed_latencies,
             "median_latency_ms": median_lat,
             "recall_at_5": q_recall,
@@ -256,6 +298,7 @@ def run_benchmark(
             "citation_precision": q_prec,
             "citation_recall": q_crecall,
             "value_accuracy": q_val_acc,
+            "draft_value_accuracy": q_draft_val_acc,
             "l1_self_check": l1_passed if not should_abstain else None,
             "answer_preview": draft_answer[:160],
         })
@@ -266,6 +309,15 @@ def run_benchmark(
     # -----------------------------------------------------------------
     # Aggregate Metrics Calculation
     # -----------------------------------------------------------------
+    answered_latencies = [
+        q["median_latency_ms"]
+        for q in question_results
+        if not q["is_abstained"]
+    ]
+    answered_p50 = calculate_percentiles(answered_latencies, [50])[50] if answered_latencies else 0.0
+    answered_p95 = calculate_percentiles(answered_latencies, [95])[95] if answered_latencies else 0.0
+    questions_flipped = [q["id"] for q in question_results if not q.get("is_stable", True)]
+    fallback_questions = [q["id"] for q in question_results if q.get("used_fallback", False)]
     overall_correct = len(correct_answers) + len(correct_refusals)
     overall_acc_pct = (overall_correct / total_q) * 100.0 if total_q else 0.0
 
@@ -296,9 +348,12 @@ def run_benchmark(
         "embedding_model": settings.GEMINI_EMBEDDING_MODEL if settings.EMBEDDING_PROVIDER == "gemini" else "BAAI/bge-small-en-v1.5",
         "vector_score_threshold": settings.RETRIEVAL_SCORE_THRESHOLD,
         "gemini_mode": "ON" if gemini_enabled else "OFF (Deterministic Fallback)",
+        "memory_mode": "ON (Neo4j)" if enable_memory else "OFF",
         "platform": f"{platform.system()} {platform.release()} ({platform.machine()})",
         "repeats": repeats,
         "delay_seconds": delay_seconds,
+        "llm_model": settings.GEMINI_MODEL if gemini_enabled else "none (offline synthesizer)",
+        "temperature": 0.0,
         "counts": {
             "total_questions": total_q,
             "answerable_questions": answerable_count,
@@ -322,13 +377,20 @@ def run_benchmark(
             "l1_self_check_pct": round(l1_pct, 2),
             "latency_median_ms": round(lat_percentiles[50], 1),
             "latency_p95_ms": round(lat_percentiles[95], 1),
+            "answered_count": len(answered_latencies),
+            "answered_latency_median_ms": round(answered_p50, 1),
+            "answered_latency_p95_ms": round(answered_p95, 1),
+            "flipped_questions_count": len(questions_flipped),
+            "flipped_questions": questions_flipped,
+            "fallback_questions_count": len(fallback_questions),
+            "fallback_questions": fallback_questions,
         },
         "question_results": question_results,
     }
 
     # Print Formatted Markdown Table
     print("\n" + "=" * 76)
-    print(" EvidenceFlow AI — Tier 1 Benchmark v1 Final Results Table")
+    print(" EvidenceFlow AI — Evaluation Benchmark Final Results Table")
     print("=" * 76)
     print(f"| Metric | Count | Percentage / Value | Target / Classification |")
     print(f"| :--- | :---: | :---: | :--- |")
@@ -341,7 +403,7 @@ def run_benchmark(
     print(f"| **Citation Precision** | — | **{mean_precision:.1f}%** | Verified Quoted Footnotes |")
     print(f"| **Citation Recall** | — | **{mean_cit_recall:.1f}%** | Claims with Citations |")
     print(f"| **L1 Groundedness (Self-Check)** | {l1_count} / {answerable_count} | **{l1_pct:.1f}%** | In-loop Pipeline Verifier |")
-    print(f"| **Median Latency** | — | **{lat_percentiles[50]:.1f} ms** | Across 3 repeats |")
+    print(f"| **Median Latency** | — | **{lat_percentiles[50]:.1f} ms** | Across {repeats} repeats |")
     print(f"| **P95 Latency** | — | **{lat_percentiles[95]:.1f} ms** | Tail latency |")
     print("=" * 76 + "\n")
 
@@ -349,13 +411,14 @@ def run_benchmark(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Run Tier 1 Evaluation Benchmark.")
+    parser = argparse.ArgumentParser(description="Run Evaluation Benchmark.")
     parser.add_argument("--split", choices=["dev", "test"], default="dev", help="Dataset split (dev or test)")
     parser.add_argument("--dataset", type=str, default=None, help="Explicit dataset JSON file path")
     parser.add_argument("--tier", type=int, default=1, help="Evaluation tier")
     parser.add_argument("--repeats", type=int, default=3, help="Latency repeat runs (warm-up discarded)")
     parser.add_argument("--delay", type=float, default=1.5, help="Query pacing delay in seconds")
     parser.add_argument("--no-gemini", action="store_true", help="Force offline mode with Gemini disabled")
+    parser.add_argument("--enable-memory", action="store_true", help="Enable Neo4j conversational memory")
     parser.add_argument("--output", type=str, default=None, help="Output JSON results path")
     args = parser.parse_args()
 
@@ -366,6 +429,7 @@ def main():
         repeats=args.repeats,
         delay_seconds=args.delay,
         verbose=True,
+        enable_memory=args.enable_memory,
     )
 
     if args.output:

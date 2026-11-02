@@ -35,12 +35,12 @@ Every Day/Task strictly follows this 3-phase cadence:
 - [x] Day 7: Benchmark v1 with deterministic scoring & baseline measurements recorded in `experiments.md` (Tier 1 Certified)
 
 ### Tier 2: The Differentiator (Memory & 5-Layer Cache)
-- [ ] Neo4j conversational graph memory (`:Turn`, `:Question`, `:Entity`, `:Claim`, `:Version`)
-- [ ] 5-Layer scoped cache implementation with composite HMAC keys
-- [ ] Zero-LLM deterministic cache hit validator & automatic stale-chunk eviction
-- [ ] FastMCP `memory-cache-mcp` server with role-based write isolation
-- [ ] Cache collision trap tests & document patch staleness tests
-- [ ] Tier 2 Ablation study: Baseline vs. +Memory vs. +Cache vs. +Both (Non-inferiority analysis)
+- [x] Day 8: Neo4j conversational graph memory (`:Turn`, `:Question`, `:Entity`, `:Claim`, `:Version`), discrete ACID transactions, explicit setting precedence, ambiguity detection, and non-inferiority evaluation against single-turn dev benchmark
+- [ ] Day 9: 5-Layer scoped cache implementation with composite HMAC keys
+- [ ] Day 10: Zero-LLM deterministic cache hit validator & automatic stale-chunk eviction
+- [ ] Day 11: FastMCP `memory-cache-mcp` server with role-based write isolation
+- [ ] Day 12: Cache collision trap tests & document patch staleness tests
+- [ ] Day 13: Tier 2 Ablation study: Baseline vs. +Memory vs. +Cache vs. +Both (Non-inferiority analysis)
 
 ### Tier 3: Stand Out (Cross-Version Reasoning & Advanced Evaluation)
 - [ ] Contradiction Analyst agent with `SUPERSEDES` and `CONTRADICTS` graph edges

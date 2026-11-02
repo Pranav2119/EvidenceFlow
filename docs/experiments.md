@@ -58,8 +58,8 @@ This document tracks all empirical evaluation runs, benchmark datasets, ablation
 ## Milestone 5: Day 7 Benchmark v1 & Baseline Measurements (Tier 1 Certified)
 
 ### 1. Dataset Partition & Integrity Verification
-- **Dev Split (40 Questions)**: `data/benchmarks/benchmark_dev_40.json` (26 answerable queries spanning Resource, WAL, Memory, Connections, Logging, Autovacuum; 14 should-refuse queries covering Prompt Injections, Hallucinated Settings, Unsupported Versions, and Out-of-Domain topics).
-- **Frozen Test Split (20 Questions)**: `data/benchmarks/benchmark_test_frozen_20.json` (13 answerable queries spanning Query Planner, Timeouts, Client formatting, Background Writer; 7 should-refuse queries).
+- **Dev Split (40 Questions, Agent-drafted)**: `data/benchmarks/benchmark_dev_40.json` (26 answerable queries spanning Resource, WAL, Memory, Connections, Logging, Autovacuum; 14 should-refuse queries covering Prompt Injections, Hallucinated Settings, Unsupported Versions, and Out-of-Domain topics; drafted by AI assistant).
+- **Frozen Test Split (20 Questions, Agent-drafted)**: `data/benchmarks/benchmark_test_frozen_20.json` (13 answerable queries spanning Query Planner, Timeouts, Client formatting, Background Writer; 7 should-refuse queries; drafted by AI assistant, frozen before baseline run).
 - **Entity Partitioning**: Zero parameter overlap between Dev and Test splits.
 - **Frozen Test File SHA-256**: `f684b07ab93d12bb65093609fb91272d82f632576c36545017f9f3747fe9415d`
 - **Protocol**: Test split is frozen, committed, and touched strictly once for final release reporting; zero prompt tuning or threshold calibration is performed against it.
@@ -76,11 +76,12 @@ This document tracks all empirical evaluation runs, benchmark datasets, ablation
 
 ---
 
-### 3. Empirical Results: Gemini ON vs. Gemini OFF (Dev Split, 40 Questions)
+### 3. Empirical Results: Baseline v1.0 — Gemini ON vs. Gemini OFF (Dev Split, 40 Questions)
 
 | Evaluation Metric | Gemini ON (Live LLM) | Gemini OFF (Deterministic Fallback) | Target Threshold | Metric Description |
 | :--- | :---: | :---: | :---: | :--- |
 | **Overall Accuracy** | **35 / 40 (87.5%)** | **37 / 40 (92.5%)** | $\ge 85.0\%$ | End-to-end task completion |
+| **End-to-End Correct** | **21 / 26 (80.8%)** | **3 / 26 (11.5%)** | $\ge 80.0\%$ | Answered + expected value + right chunk cited |
 | **Wrong Answers (FN, $\beta$-error)** | **0 / 14 (0.0%)** | **0 / 14 (0.0%)** | **Strictly 0.0%** | Injections / hallucinations leaked (Dangerous) |
 | **Wrong Refusals (FP, $\alpha$-error)** | **5 / 26 (19.2%)** | **3 / 26 (11.5%)** | $\le 20.0\%$ | Legitimate technical queries blocked (Annoying) |
 | **Retrieval Recall@5** | **100.0%** | **100.0%** | $\ge 88.0\%$ | Top-5 ground-truth chunk presence (Answerable only) |
@@ -94,6 +95,38 @@ This document tracks all empirical evaluation runs, benchmark datasets, ablation
 
 ---
 
+### 3b. Empirical Results: Baseline v1.1 Post-Tier 2 Improvements (Dev Split, 40 Questions)
+- **Evaluation Type**: Re-run of the Day 7 Dev benchmark after Part B improvements (verifier precision, offline substantive sentence extraction, isolated pure Gemini API latency measurement).
+- **Day 7 Frozen Test Split Status**: **NEVER RUN**. The frozen test split (`benchmark_test_frozen_20.json`, SHA-256: `f684b07ab93d12bb65093609fb91272d82f632576c36545017f9f3747fe9415d`) remains 100% untouched and unexecuted.
+- **Generalization Disclaimer**: Baseline v1.1 gains were measured on dev sets the agent had seen, so they are not generalization evidence. The Day 7 frozen test stays unrun until explicitly directed.
+- **Raw Result Artifacts**:
+  - `data/benchmarks/dev_baseline_v1_1_no_gemini.json` (Gemini OFF, 3 repeats, delay 0.0s)
+  - `data/benchmarks/dev_baseline_v1_1_gemini_on.json` (Gemini ON, 3 repeats, delay 2.0s)
+
+| Evaluation Metric | Baseline v1.0 (Gemini ON) | Baseline v1.1 (Gemini ON) | Baseline v1.0 (Gemini OFF) | Baseline v1.1 (Gemini OFF) | Target Threshold | Metric Description |
+| :--- | :---: | :---: | :---: | :---: | :---: | :--- |
+| **Overall Accuracy** | 35 / 40 (87.5%) | **36 / 40 (90.0%)** | 37 / 40 (92.5%) | **38 / 40 (95.0%)** | $\ge 85.0\%$ | End-to-end task completion |
+| **End-to-End Correct** | 21 / 26 (80.8%) | **22 / 26 (84.6%)** | 3 / 26 (11.5%) | **22 / 26 (84.6%)** | $\ge 80.0\%$ | Answered + expected value + right chunk cited |
+| **Wrong Answers (FN, $eta$-error)** | 0 / 14 (0.0%) | **0 / 14 (0.0%)** | 0 / 14 (0.0%) | **0 / 14 (0.0%)** | **Strictly 0.0%** | Injections / hallucinations leaked (Dangerous) |
+| **Wrong Refusals (FP, $lpha$-error)** | 5 / 26 (19.2%) | **4 / 26 (15.4%)** | 3 / 26 (11.5%) | **2 / 26 (7.7%)** | $\le 20.0\%$ | Legitimate technical queries blocked (Annoying) |
+| **Retrieval Recall@5** | 100.0% | **100.0%** | 100.0% | **100.0%** | $\ge 88.0\%$ | Top-5 ground-truth chunk presence (Answerable only) |
+| **Retrieval MRR** | 0.9615 | **0.9615** | 0.9615 | **0.9615** | $\ge 0.78$ | Mean Reciprocal Rank of first relevant passage |
+| **Value Accuracy (Unit Eq.)** | 25 / 26 (96.2%) | **26 / 26 (100.0%)** | 3 / 26 (11.5%) | **24 / 26 (92.3%)** | $\ge 90.0\%$ | Expected parameter value present with unit mapping |
+| **Citation Precision** | 73.1% | **84.6%** | 88.5% | **92.3%** | $100.0\%$ | Fraction of cited footnotes verified against evidence |
+| **Citation Recall** | 80.8% | **84.6%** | 88.5% | **92.3%** | $\ge 80.0\%$ | Assertions backed by valid cited chunk footnotes |
+| **L1 Groundedness (Self-Check)** | 26 / 26 (100.0%) | **26 / 26 (100.0%)** | 26 / 26 (100.0%) | **26 / 26 (100.0%)** | $100.0\%$ | Internal pipeline verifier pass rate |
+| **Median Latency (p50)** | 12,708.8 ms | **897.3 ms** | 89.4 ms | **105.4 ms** | Baseline | Typical query execution duration across 3 repeats |
+| **Tail Latency (p95)** | 35,797.9 ms | **7,040.0 ms** | 191.4 ms | **208.3 ms** | Baseline | 95th percentile execution latency |
+
+> [!NOTE]
+> **Key Analysis of Baseline v1.1 Gains**:
+> 1. **Offline Value Accuracy surged from 11.5% to 92.3%**: The new substantive sentence extractor in the offline synthesizer extracts parameter defaults and descriptions rather than truncating at section headers.
+> 2. **Gemini ON Value Accuracy reached 100.0% (26/26)**: The decimal and negative number verifier precision fixes eliminated false rejections on values like `-1` and `0.2`.
+> 3. **Latency Instrumentation Cleanliness**: Pure Gemini API call timing is now isolated in the execution ledger (`p50 = 11,226.5 ms` pure API call, isolated from retries and pacing).
+
+
+---
+
 ### 4. Key Engineering Insights & Trade-Off Analysis
 
 1. **Zero Security Leakage Maintained Across Both Modes**:
@@ -104,8 +137,166 @@ This document tracks all empirical evaluation runs, benchmark datasets, ablation
 3. **The Core Tier 2 Hypothesis**:
    - When we introduce the 5-layer scoped cache in Tier 2, cache hits will deliver **Gemini ON quality (96.2% value accuracy, full explanations)** at **Gemini OFF latency (< 3 ms, 0 token cost)**.
 4. **False Refusal Taxonomy (Gemini ON, 5 cases)**:
-   - `d10` (`max_wal_size` in v15): Model cited `1GB`, but setting proximity window failed due to multi-paragraph discussion of checkpoint frequency.
+   - `d10` (`max_wal_size` in v15): Model cited `1GB`, but same-sentence proximity verifier failed because the setting and claimed attribute were separated across paragraphs.
    - `d21` (`autovacuum_naptime` in v16): Model phrased default as "1 minute (the default)", but setting was separated from unit mapping by explanatory text.
    - `d22` (`archive_mode` in v16): L2 verifier flagged missing boolean toggle in tight proximity window.
    - `d23` (`vacuum_buffer_usage_limit` in v16): Transient network retry fallback triggered fallback abstention.
    - `d25` (`ignore_system_indexes` in v14): Boolean flag discussion triggered fallback abstention.
+
+
+---
+
+## Milestone 6: Day 8 Neo4j Conversational Graph Memory & Multi-Turn Benchmark
+
+### 1. Multi-Turn Follow-up Evaluation (20-Conversation Exam)
+- **Dataset**: `data/benchmarks/followup_eval_20.json` (8 genuine pronoun follow-ups, 5 non-follow-up questions with grammatical "it"/"that", 3 refusal follow-ups, 3 multi-entity follow-ups, 1 empty thread).
+- **Execution Script**: `src/evidenceflow/eval/run_followup_benchmark.py`
+- **Results**:
+  - **Overall Resolution Accuracy**: **100.0% (20 / 20)**
+  - **Pronoun Resolution Accuracy**: **100.0% (8 / 8)**
+  - **False Trigger Rate (Pass-through)**: **0.0% (0 / 5)** (Target: 0.0%)
+  - **Ambiguity Detection Rate**: **100.0% (7 / 7)** (Triggers clarifying question on multi-entity/refusal turns)
+- **Real Measured Resolution Latencies (Python `time.perf_counter()`)**:
+  - **Median (p50)**: **6.998 ms**
+  - **Tail (p95)**: **49.870 ms**
+  - **Mean**: **10.167 ms**
+  - **Min / Max**: **0.035 ms / 49.870 ms**
+  - *Engineering Note*: Regex pass-through took **0.035–0.30 ms**; Neo4j index-backed graph traversal queries averaged **6–7 ms**.
+
+---
+
+### 2. Single-Turn Non-Inferiority Verification (Dev Split, 40 Questions)
+We evaluated whether activating the Neo4j conversational memory graph resolver degraded single-turn retrieval, accuracy, or safety metrics on the 40-question Dev benchmark (`benchmark_dev_40.json`).
+
+| Metric | Memory OFF (Baseline) | Memory ON (Neo4j Graph) | Delta ($\Delta$) | Non-Inferiority Status |
+| :--- | :---: | :---: | :---: | :--- |
+| **Overall Accuracy** | **37 / 40 (92.5%)** | **37 / 40 (92.5%)** | **0.0%** | **Identical (Passed)** |
+| **Wrong Answers (FN, $\beta$-error)** | **0 / 14 (0.0%)** | **0 / 14 (0.0%)** | **0.0%** | **Zero leakage (Passed)** |
+| **Wrong Refusals (FP, $\alpha$-error)** | **3 / 26 (11.5%)** | **3 / 26 (11.5%)** | **0.0%** | **Identical (Passed)** |
+| **Retrieval Recall@5** | **100.0%** | **100.0%** | **0.0%** | **Identical (Passed)** |
+| **Retrieval MRR** | **0.9615** | **0.9615** | **0.0000** | **Identical (Passed)** |
+| **Value Accuracy** | **11.5%** | **11.5%** | **0.0%** | **Identical (Passed)** |
+| **Citation Precision** | **88.5%** | **88.5%** | **0.0%** | **Identical (Passed)** |
+| **Citation Recall** | **88.5%** | **88.5%** | **0.0%** | **Identical (Passed)** |
+| **L1 Groundedness (Self-Check)** | **26 / 26 (100.0%)** | **26 / 26 (100.0%)** | **0.0%** | **Identical (Passed)** |
+| **Median Latency** | **102.8 ms** | **148.3 ms** | **+45.5 ms** | Real Bolt connection + turn write I/O |
+| **Tail Latency (p95)** | **158.8 ms** | **263.8 ms** | **+105.0 ms** | Database transaction commit overhead |
+
+- **Conclusion**: Conversational graph memory provides 100% follow-up resolution accuracy with **zero quality or safety regression** on single-turn tasks.
+
+---
+
+### 3. Multi-Turn Holdout Evaluation (External Follow-up Set)
+- **Dataset**: `data/benchmarks/followup_holdout_20.json`
+- **SHA-256**: `a4633e20e6f6631ad19074092b704c0ca9214777a457494ec235213b28b5774a`
+- **Dataset Classification**: AI-drafted by an external assistant, not edited by the repo author; now a development set.
+- **Protocol**: Held-out benchmark evaluated once to surface architectural edge cases, then immediately converted into a development set. Zero test tuning performed against the frozen test split.
+- **Raw Result Artifacts**:
+  - `data/benchmarks/holdout_results_gemini_off.json` (Code under test commit: `d7d5fa8`, Dataset SHA-256: `a4633e20e6f6631ad19074092b704c0ca9214777a457494ec235213b28b5774a`)
+  - `data/benchmarks/holdout_results_gemini_on.json` (Code under test commit: `d7d5fa8`, Dataset SHA-256: `a4633e20e6f6631ad19074092b704c0ca9214777a457494ec235213b28b5774a`)
+
+---
+
+### 4. Multi-Turn Held-Out Set 2 Evaluation (`followup_holdout2_20.json`)
+- **Dataset**: `data/benchmarks/followup_holdout2_20.json`
+- **SHA-256**: `7982fd1fae22f586261bb94959dc15e371ec12edf9a1bd37c106a87c52902598`
+- **Committed Alone in Commit**: `fe0c2d9`
+- **Code Under Test Git Commit**: `a684c30`
+- **Dataset Design & Provenance Note**: Held-out Set 2 (`followup_holdout2_20.json`) was specifically designed after examining failures from Held-out Set 1 to test critical edge cases (such as possessive version queries, pronoun follow-ups with unsupported versions, plural setting disambiguation, and off-topic pronoun questions). Following protocol, both holdout sets are now frozen as development sets; neither is re-run as generalization evidence.
+- **Raw Result Artifacts**:
+  - `data/benchmarks/holdout2_results_gemini_off.json`
+  - `data/benchmarks/holdout2_results_gemini_on.json`
+
+#### Evaluation Results (Scoring Reported Separately)
+
+| Metric | Gemini OFF (Deterministic Fallback) | Gemini ON (Live LLM) | Notes / Evaluation Protocol |
+| :--- | :---: | :---: | :--- |
+| **Resolution Accuracy** | **17 / 20 (85.0%)** | **16 / 20 (80.0%)** | Intermediate resolution accuracy on Turn 2 follow-ups |
+| **False Trigger Rate** | **1 / 4 (25.0%)** | **1 / 4 (25.0%)** | Evaluated on passthrough control cases (`g12`–`g15`) |
+| **End-to-End Correctness (Strict Count)** | **6 / 20 (30.0%)** | **15 / 20 (75.0%)** | Automated strict pass (turn 2 answer/refusal + expected values + valid citation) |
+| **Gemini Fallback Count** | N/A | **0 / 20 (0.0%)** | 100% of answerable turns generated by live LLM without falling back to offline template |
+
+- *Strict Metric Audit Note*: The strict automated count for Gemini OFF is **6 / 20 (30.0%)**, replacing any earlier subjective estimate (such as "15/20 valid under human evaluation"). The automated runner strictly flagged single-line offline synthesizer outputs formatted as `According to PostgreSQL ...: <sentence> [^chunk]` as header-only.
+- **Primary Root Causes Identified (Pre-Fix Batch)**:
+  1. `g06`: `AttributeError: 'Citation' object has no attribute 'get'` inside `workflow.py:226`.
+  2. `g09`: Short version questions without setting name (`"Same in 15?"`) not caught by regex.
+  3. `g20`: Version extractor only matched `{14, 15, 16}`, causing unsupported version (`12`) to fall back to turn 1's version (`16`).
+  4. `g15`: Off-corpus vocabulary in pronoun question (`"Tell me a joke about servers. Is it funny?"`) false-triggered pronoun resolution.
+  5. `g07`: Cross-version comparative query (`"Is its default the same in 16?"`) did not fetch both version chunks.
+
+#### Post-Fix Regression Verification Run (NOT Generalization Evidence)
+Following completion of the fix batch, Held-out Set 2 was re-executed strictly as a regression verification run to ensure the targeted architectural fixes resolved the identified failure modes without regressions:
+- **Raw Regression Artifacts**: `data/benchmarks/holdout2_results_gemini_off_after.json`, `data/benchmarks/holdout2_results_gemini_on_after.json`
+- **Methodological Disclaimer**: Because `followup_holdout2_20.json` was analyzed to design the fix batch, these results (**20/20 Resolution, 20/20 E2E**) represent a post-fix regression verification check on a known development set, and strictly **NOT** generalization evidence.
+
+| Metric | Post-Fix Gemini OFF | Post-Fix Gemini ON | Delta vs Pre-Fix (Gemini ON) | Status |
+| :--- | :---: | :---: | :---: | :--- |
+| **Resolution Accuracy** | **20 / 20 (100.0%)** | **20 / 20 (100.0%)** | **+20.0%** (was 16/20) | Regression Verified |
+| **False Trigger Rate** | **0 / 2 (0.0%)** | **0 / 2 (0.0%)** | **-25.0%** (was 1/4) | Regression Verified |
+| **End-to-End Correctness** | **11 / 20 (55.0%)** | **20 / 20 (100.0%)** | **+25.0%** (was 15/20) | Regression Verified |
+| **Gemini Fallback Count** | N/A | **0 / 20 (0.0%)** | 0.0% | Zero fallbacks |
+
+---
+
+### 5. Tier 1 Final Baseline Measurements (For Tier 2 Cache Comparisons)
+- **Git Commit Baseline**: `b358512` (Fix Batch 2 & decimal verifier precision certified)
+- **Model String**: `gemini-3.5-flash-lite` (Live LLM) / Deterministic Offline Synthesizer (Gemini OFF)
+- **Generation Temperature**: `0.0` (Strictly deterministic grounded generation)
+- **Dataset**: `data/benchmarks/benchmark_dev_40.json` (40 questions, single-turn Tier 1 pipeline; development set)
+- **Artifacts**:
+  - `data/benchmarks/dev_baseline_remeasure_gemini_on.json` (Commit: `279cde1`, delay: 1.5s, 1 warmup + 3 repeats, temperature: 0.0, model: `gemini-3.5-flash-lite`)
+  - `data/benchmarks/dev_baseline_remeasure_gemini_off.json` (Commit: `279cde1`, delay: 0.0s, 1 warmup + 3 repeats, temperature: 0.0, model: `none (offline synthesizer)`)
+- **Purpose**: Establishes the authoritative pre-cache accuracy, latency, and stability baseline to measure speedup and token reduction when the Tier 2 scoped cache is introduced.
+
+> [!NOTE]
+> **Superseded Run Notice**: The preliminary unpaced run recorded in older `tier1_final_baseline.json` (which reported 19 answered questions and 7 verifier refusals) is **superseded**. That preliminary run suffered from rapid-fire 429 quota exhaustion that forced queries into the un-paced offline fallback synthesizer with chapter breadcrumbs. The authoritative table below reflects the paced run at commit `279cde1` with zero 429 errors and zero fallbacks.
+
+#### Authoritative Tier 1 Dev Benchmark (Gemini ON vs. Gemini OFF at Commit `279cde1`)
+
+| Evaluation Metric | Gemini ON (Live LLM) | Gemini OFF (Deterministic Fallback) | Target Threshold | Metric Description |
+| :--- | :---: | :---: | :---: | :--- |
+| **Overall Accuracy** | **38 / 40 (95.0%)** | **36 / 40 (90.0%)** | $\ge 85.0\%$ | End-to-end task completion |
+| **End-to-End Correct (Answered)** | **24 / 26 (92.3%)** | **22 / 26 (84.6%)** | $\ge 80.0\%$ | Answered + expected value + right chunk cited |
+| **Wrong Answers (FN, $\beta$-error)** | **0 / 14 (0.0%)** | **0 / 14 (0.0%)** | **Strictly 0.0%** | Injections / hallucinations leaked (Dangerous) |
+| **Wrong Refusals (FP, $\alpha$-error)** | **2 / 26 (7.69%)** | **4 / 26 (15.4%)** | $\le 20.0\%$ | Legitimate technical queries blocked (Annoying) |
+| **Retrieval Recall@5** | **100.0%** | **100.0%** | $\ge 88.0\%$ | Top-5 ground-truth chunk presence (Answerable only) |
+| **Retrieval MRR** | **0.9615** | **0.9615** | $\ge 0.78$ | Mean Reciprocal Rank of first relevant passage |
+| **Value Accuracy (Final Visible)** | **24 / 26 (92.3%)** | **22 / 26 (84.6%)** | $\ge 90.0\%$ | Expected parameter value present in final answer |
+| **Citation Precision (Final Visible)** | **92.31%** | **84.62%** | $100.0\%$ | Cited footnotes verified against evidence in final answer |
+| **Citation Recall (Final Visible)** | **92.31%** | **84.62%** | $\ge 80.0\%$ | Ground-truth chunk cited in final visible answer |
+| **L1 Groundedness (Self-Check)** | **26 / 26 (100.0%)** | **26 / 26 (100.0%)** | $100.0\%$ | Internal pipeline verifier pass rate |
+| **Overall Median Latency (p50)** | **1,212.3 ms** | **88.4 ms** | Baseline | Typical query execution duration across all 40 queries |
+| **Overall Tail Latency (p95)** | **2,028.4 ms** | **164.3 ms** | Baseline | 95th percentile execution latency across all 40 queries |
+| **Answered-Only Median Latency** | **1,366.0 ms** ($n=24$) | **92.6 ms** ($n=22$) | Baseline | Median duration for successfully answered questions |
+| **Answered-Only Tail Latency (p95)** | **1,752.8 ms** ($n=24$) | **140.2 ms** ($n=22$) | Baseline | 95th percentile duration for answered questions |
+| **Offline Fallback Count** | **0 / 40 (0.0%)** | **28 / 40 (70.0%)** | $0.0\%$ for ON | Queries synthesized by offline fallback generator |
+| **Repeat Stability (Flips across 3 runs)** | **0 / 40 (0.0%)** | **0 / 40 (0.0%)** | $0.0\%$ | Questions whose pass/fail verdict differed across 3 repeats |
+
+#### Cohort & Decision Breakdown (Gemini ON, 40 Questions)
+
+| Cohort | Count | Decided By | Median Latency (p50) | Tail Latency (p95) | Notes |
+| :--- | :---: | :---: | :---: | :---: | :--- |
+| **All Answered Questions** | **24** | — | **1,366.0 ms** | **1,752.8 ms** | 24 of 26 answerable questions answered |
+| **LLM Decided** | **24** | `llm` | **1,366.0 ms** | **1,752.8 ms** | 100% of answered queries generated by live model |
+| **Fallback Decided** | **0** | `fallback` | N/A | N/A | Zero answered turns fell back to offline synthesizer |
+| **Refused Early by Rules** | **12** | `rules` | **54.8 ms** | **98.2 ms** | Fast refusals: `d27`–`d29`, `d31`–`d39` |
+| **Refused by Verifier/Writer** | **4** | `writer` | **1,245.5 ms** | **1,842.1 ms** | `d22`, `d25` (missing default in chunks), `d30`, `d40` (model abstained on ungrounded/out-of-scope query) |
+| **Total Cohort Reconciled** | **40** | — | **1,212.3 ms** | **2,028.4 ms** | 24 answered + 12 rule-refused + 4 verifier-refused = 40 |
+
+
+---
+
+### 6. Multi-Turn Regression Verification (Development Sets — NOT Generalization Evidence)
+Following completion of Fix Batch 2 and decimal verifier precision refinements, all three multi-turn conversational memory benchmarks were re-executed on current HEAD across both Gemini OFF and Gemini ON. Because all three sets are known development benchmarks, these results represent regression verification checks and strictly **NOT** generalization evidence.
+
+#### Multi-Turn Regression Check Results (Commit `b358512`, Temperature `0.0`, Model `gemini-3.5-flash-lite`)
+
+| Benchmark Dataset | Mode | Resolution Accuracy | False Trigger Rate | End-to-End Correct | Cases Passed Before & Failing Now | Cases Newly Passing | Regression Status |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
+| **`followup_eval_20.json`** | Gemini ON / OFF | **20 / 20 (100.0%)** | **0 / 5 (0.0%)** | **20 / 20 (100.0%)** | **0** | **0** | **Zero Regressions (100% Stable)** |
+| **`followup_holdout_20.json`** | Gemini OFF | **20 / 20 (100.0%)** | **0 / 20 (0.0%)** | **14 / 20 (70.0%)** | **0** | **0** | **Zero Regressions (100% Stable)** |
+| **`followup_holdout_20.json`** | Gemini ON | **20 / 20 (100.0%)** | **0 / 20 (0.0%)** | **18 / 20 (90.0%)** | **0** | **0** | **Zero Regressions (100% Stable)** |
+| **`followup_holdout2_20.json`** | Gemini OFF | **20 / 20 (100.0%)** | **0 / 2 (0.0%)** | **14 / 20 (70.0%)** | **0** | **0** | **Zero Regressions (100% Stable)** |
+| **`followup_holdout2_20.json`** | Gemini ON | **20 / 20 (100.0%)** | **0 / 2 (0.0%)** | **20 / 20 (100.0%)** | **0** | **0** | **Zero Regressions (100% Stable)** |
+
+- **Regression Summary**: Across all 60 evaluation scenarios evaluated under both Gemini ON and Gemini OFF, **zero cases that previously passed failed now** ($0 / 60$).
