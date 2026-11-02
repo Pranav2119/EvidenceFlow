@@ -367,3 +367,48 @@ Following strict machine learning integrity protocols, the 25-question held-out 
   - **Recall@5 & MRR**: **100.0% & 0.9615** (Identical)
   - **L1 Groundedness**: **100.0% vs. 100.0%** (Identical)
   - **Latency Overhead**: +45.5 ms median from Neo4j transactional Bolt commit.
+
+
+---
+
+## Session 8: Day 9 5-Layer Scoped Cache Architecture with Composite HMAC Keys
+**Date**: 2026-11-02  
+**Focus**: Five-layer hierarchical cache (L1 Exact Match, L2 Semantic Vector, L3 Retrieval, L4 Dense Embedding, L5 Verified-Claim), composite HMAC-SHA256 scope keys, query normalization, strict cross-version cache isolation, and invalidation mechanisms.
+
+---
+
+### 1. Concepts Mastered & Architectural Defenses
+
+#### A. Composite Scope Keys vs. Naive Query Caching
+- **The Cross-Version Cache Poisoning Hazard**: Naively caching answers by raw query text (`hash(query)`) guarantees cross-version contamination in multi-version RAG. For instance, asking *"What is the default value of wal_keep_size?"* for PostgreSQL 16 (`0`) and returning it for PostgreSQL 12 (where `wal_keep_size` did not exist) is catastrophic.
+- **Cryptographic Scope Key Formula**:
+  $$\text{ScopeKey} = \text{HMAC-SHA256}_{\text{salt}}\Big(I:\text{Intent} \;\parallel\; V:\text{SortedVersions} \;\parallel\; CFG:\text{ConfigVersion} \;\parallel\; GD:\text{GuardrailVersion} \;\parallel\; Q:\text{Normalize}(\text{Query})\Big)$$
+- **Orthogonal Isolation**: Any change to target version (`14` vs `16`), configuration hash, or guardrail version generates a completely orthogonal hash key.
+
+#### B. The 5-Layer Cache Hierarchy
+1. **Layer 1 — Exact Match Cache**: In-memory LRU keyed by the composite HMAC scope key. Sub-millisecond lookup (<0.1 ms) for verbatim repeated questions with identical version scope.
+2. **Layer 2 — Semantic Cache**: Vector cosine similarity index requiring similarity $\ge 0.96$ and strict version-scope overlap, guardrail match, and intent alignment.
+3. **Layer 3 — Retrieval Cache**: Binds query terms and version filter to retrieved passage IDs and scores, eliminating hybrid search overhead on repeated topic explorations.
+4. **Layer 4 — Embedding Cache**: Caches dense embedding vectors by text hash and model name, eliminating redundant embedding model API / local inference calls.
+5. **Layer 5 — Verified-Claim Cache**: Fast dictionary of atomic verified claims keyed by `CLAIM:{version}:{entity}:{attribute}` (e.g. `CLAIM:16:autovacuum_naptime:default`), enabling instant factual claim verification.
+
+#### C. Invalidation Guarantees
+- **`invalidate_by_version(version)`**: Purges all entries across L1, L2, L3, and L5 referencing a re-indexed or patched documentation version.
+- **`invalidate_by_passage(passage_id)`**: Evicts all L1, L2, and L5 entries citing a modified or deleted passage chunk.
+
+---
+
+### 2. Empirical Verification & Test Results
+
+- **Cache Key Suite (`test_cache_keys.py`)**: 9/9 passed.
+  - Verified version isolation (`k1 != k2` between v14 and v16).
+  - Verified query normalization (whitespace, punctuation, casing produce identical keys).
+  - Verified config version and guardrail version isolation.
+  - Verified version sorting invariance (`["14", "16"] == ["16", "14"]`).
+- **Cache Manager Suite (`test_cache_manager.py`)**: 9/9 passed.
+  - Verified L1 hit, miss, and LRU capacity eviction.
+  - Verified L2 semantic cosine thresholding and strict version filtering.
+  - Verified L3 retrieval, L4 embedding, and L5 verified claim stores.
+  - Verified version-wide and passage-specific invalidations.
+  - Verified orchestrated `lookup()` fast-path.
+- **Break It on Purpose**: Demonstrated cross-version cache collision when version scope is omitted from hashing (`naive_k1 == naive_k2`), confirming the critical necessity of composite HMAC keys.

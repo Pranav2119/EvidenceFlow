@@ -36,7 +36,7 @@ Every Day/Task strictly follows this 3-phase cadence:
 
 ### Tier 2: The Differentiator (Memory & 5-Layer Cache)
 - [x] Day 8: Neo4j conversational graph memory (`:Turn`, `:Question`, `:Entity`, `:Claim`, `:Version`), discrete ACID transactions, explicit setting precedence, ambiguity detection, and non-inferiority evaluation against single-turn dev benchmark
-- [ ] Day 9: 5-Layer scoped cache implementation with composite HMAC keys
+- [x] Day 9: 5-Layer scoped cache implementation with composite HMAC keys (L1 Exact Match, L2 Semantic, L3 Retrieval, L4 Embedding, L5 Verified-Claim)
 - [ ] Day 10: Zero-LLM deterministic cache hit validator & automatic stale-chunk eviction
 - [ ] Day 11: FastMCP `memory-cache-mcp` server with role-based write isolation
 - [ ] Day 12: Cache collision trap tests & document patch staleness tests
