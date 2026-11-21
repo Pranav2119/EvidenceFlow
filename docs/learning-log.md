@@ -483,3 +483,58 @@ EvidenceFlow AI uses decoupled, content-addressed hash validation. Every cached 
 **Answer**:  
 A **cache miss** occurs when no entry exists in L1 Exact match (key not found) or L2 Semantic cache (cosine similarity $< 0.96$). It is an ordinary event indicating a new or un-cached query.  
 A **cache rejection** occurs when an entry *does* exist in the cache, but is actively disqualified by the `CacheGatekeeper` during deterministic validation. Disqualification happens if cited chunks were modified (hash mismatch), cited chunks were deleted (passage not found), or runtime configuration/guardrail versions were bumped. A cache rejection triggers automatic eviction of the stale entry to heal the cache.
+
+
+---
+
+## Session 10: Day 11 FastMCP Memory & Cache Server (`memory-cache-mcp`)
+**Date**: 2026-11-21  
+**Focus**: FastMCP `memory-cache-mcp` service, role-based write isolation middleware (`require_role`), least-privilege security boundaries across conversational memory and cache, socket circuit breaker, and JSON-RPC ClientSession integration.
+
+---
+
+### 1. Concepts Mastered & Architectural Defenses
+
+#### A. Role-Based Tool Write Isolation
+- **The Shared-State Poisoning Threat**: In multi-agent RAG architectures, granting write permissions broadly to agents (such as `Retriever` or `AnswerWriter`) allows intermediate unverified hallucinations or exploratory search results to be committed directly into persistent memory or the verified cache.
+- **Principle of Least Privilege**:
+  - `lookup_cache`: READ-ONLY (Authorized: `cache_gatekeeper`, `planner`, `orchestrator`, `admin`).
+  - `write_cache`: PROTECTED WRITE (Strictly restricted to `cache_gatekeeper` and `admin`). Calls from `retriever`, `answer_writer`, or `planner` are rejected with `PermissionDenied: <role> cannot write to cache`.
+  - `query_entity_graph`: READ-ONLY (Authorized: `planner`, `memory_resolver`, `orchestrator`, `analyst`, `admin`).
+  - `commit_turn_memory`: PROTECTED WRITE (Strictly restricted to `memory_curator` and `admin`). Calls from uncurated roles are rejected with `PermissionDenied: <role> cannot write to memory`.
+
+#### B. Stdio Transport Protocol Protection
+- All logging, warnings, and diagnostic telemetry in FastMCP servers are directed strictly to `sys.stderr`. Emitting `print()` or stdout text corrupts the JSON-RPC message framing over stdio streams, causing protocol deserialization failures on MCP clients.
+
+#### C. Audit Ledger Circuit Breaker
+- Implemented a 50ms socket reachability probe with 15-second TTL caching in `_log_audit_step`. When local database containers are offline or transitioning, audit logging fails fast without stalling tool execution behind 30-second connection timeouts, dropping test suite execution from 21 minutes down to **4.71 seconds**.
+
+---
+
+### 2. Empirical Verification & Test Results
+
+- **MCP Security Suite (`test_memory_cache_mcp.py`)**: 9/9 passed in 4.71s.
+  - `test_unauthorized_cache_write_rejections`: Confirmed `retriever`, `answer_writer`, `planner`, `guest`, and anonymous callers are blocked with `PermissionDenied`.
+  - `test_authorized_cache_write_and_lookup`: Confirmed `cache_gatekeeper` write and `planner`/`orchestrator` lookup succeed.
+  - `test_unauthorized_memory_commit_rejections`: Confirmed unauthorized memory writes are blocked.
+  - `test_authorized_memory_commit_and_query`: Confirmed `memory_curator` write and `planner` query succeed.
+  - `test_unauthorized_memory_query_rejection`: Confirmed untrusted callers cannot inspect conversational memory graph.
+  - `test_mcp_server_tools_registered`: Confirmed all 4 tools register cleanly over stdio.
+  - `test_mcp_client_session_cache_write_and_read`: Confirmed full end-to-end JSON-RPC bidirectional stream execution using `ClientSession`.
+  - `test_break_it_on_purpose_role_guard_necessity`: Confirmed that an unverified retrieval attempt to write `max_connections is 9999999` is rejected and leaves the cache completely clean.
+
+---
+
+### 3. Technical Explain-Back Questions & Interview Defense
+
+#### Q1: Why should tool access be partitioned by agent role rather than giving every agent unrestricted access to all MCP tools?
+**Answer**:  
+Giving all agents unrestricted access violates the principle of least privilege and introduces catastrophic state poisoning. In high-assurance RAG, intermediate agents like `Retriever` or `AnswerWriter` frequently process noisy or ungrounded drafts that have not yet passed deterministic verification. If an `AnswerWriter` could write directly to conversational memory or the cache, a single hallucination would be committed as factual ground truth, permanently corrupting downstream turns and single-turn cache hits. Partitioning tools by role ensures that only verified components (`MemoryCurator` after ground truth validation, `CacheGatekeeper` after SHA-256 hash checking) have write access.
+
+#### Q2: How does using an MCP server for memory decouple the storage backend (Neo4j) from the agent orchestration framework (LangGraph)?
+**Answer**:  
+FastMCP establishes a standard JSON-RPC interface over stdio or SSE. The LangGraph state machine interacts with memory purely through tool specifications (`query_entity_graph`, `commit_turn_memory`), remaining completely agnostic to Cypher syntax, Neo4j driver configurations, connection pooling, or database clustering. If the backend storage is later migrated from Neo4j to AWS Neptune, Memgraph, or a relational graph CTE, only the MCP server implementation changes; zero LangGraph nodes or workflow edges require modification.
+
+#### Q3: What happens if the `memory-cache-mcp` server crashes during a workflow turn? How does the agent handle the failure?
+**Answer**:  
+EvidenceFlow AI implements fail-open memory reads and fail-closed memory writes. If `memory-cache-mcp` becomes unreachable or crashes during a turn, `query_entity_graph` and `lookup_cache` catch the transport exception, emit structured error details to `sys.stderr`, and gracefully fall back to fresh retrieval without blocking the pipeline. For writes, any failure in `commit_turn_memory` or `write_cache` logs an error to the step ledger and prevents unconfirmed assertions from being marked as verified, preserving data integrity across restarts.
