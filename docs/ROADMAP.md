@@ -47,5 +47,5 @@ Every Day/Task strictly follows this 3-phase cadence:
 - [x] Day 14: Contradiction Analyst agent with `SUPERSEDES` and `CONTRADICTS` graph edges
 - [x] Day 15: Independent L2 Judge for contested claims (selective activation via ADR-005)
 - [x] Day 16: Benchmark comparison: EvidenceFlow vs. pgvector + full-text vs. recursive SQL
-- [ ] External API FastMCP server with rate-limiting & schema validation
+- [x] Day 17: External API FastMCP server with rate-limiting & schema validation
 - [ ] CI regression test gate (preventing recall/groundedness regressions)
