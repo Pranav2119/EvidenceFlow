@@ -538,3 +538,65 @@ FastMCP establishes a standard JSON-RPC interface over stdio or SSE. The LangGra
 #### Q3: What happens if the `memory-cache-mcp` server crashes during a workflow turn? How does the agent handle the failure?
 **Answer**:  
 EvidenceFlow AI implements fail-open memory reads and fail-closed memory writes. If `memory-cache-mcp` becomes unreachable or crashes during a turn, `query_entity_graph` and `lookup_cache` catch the transport exception, emit structured error details to `sys.stderr`, and gracefully fall back to fresh retrieval without blocking the pipeline. For writes, any failure in `commit_turn_memory` or `write_cache` logs an error to the step ledger and prevents unconfirmed assertions from being marked as verified, preserving data integrity across restarts.
+
+
+---
+
+## Session 11: Day 12 Cache Collision Traps & Staleness Failure Tests
+**Date**: 2026-11-21  
+**Focus**: Adversarial failure-test suite (`tests/failure/test_cache_traps.py`), cross-version collision verification (`verify_cache_isolation.py`), 0.00% False-Hit Rate proof, single-character patch staleness traps, and prompt injection cache containment.
+
+---
+
+### 1. Concepts Mastered & Architectural Defenses
+
+#### A. Adversarial Failure Testing & The Zero False-Hit Invariant
+- **The Danger of Naive RAG Caching**: In technical documentation systems covering multiple software versions, naive query-string caches or un-scoped vector similarity caches suffer from catastrophic "version bleed"—returning answers for legacy or future releases.
+- **The Zero False-Hit Invariant**: In technical engineering systems, serving an incorrect configuration parameter from the wrong version is far worse than a cache miss. EvidenceFlow AI mandates a **strictly 0.00% False-Hit Rate**.
+
+#### B. Cross-Version Collision Traps
+- Developed an automated adversarial matrix testing parameters whose defaults or presence changed across PostgreSQL 14, 15, and 16 (e.g. `wal_compression`, `log_checkpoints`, `vacuum_defer_cleanup_age`, `autovacuum_vacuum_cost_limit`, `vacuum_buffer_usage_limit`).
+- Verified that querying version 14 primes only the v14 cache; subsequent identical queries for v16 yield an immediate cache miss, and subsequent lookups for v14 return only v14 citations and values.
+
+#### C. Semantic Cache Vector Isolation
+- Tested Layer 2 Semantic Cache under maximum adversarial stress: two queries with identical embeddings ($\text{cosine similarity} = 1.0$) but differing target versions (`"14"` vs `"16"`). The version payload filter strictly prevents semantic match across versions.
+
+#### D. Security Containment
+- Verified that adversarial prompt injections (e.g. jailbreak instructions) halted by the input guardrail are completely isolated and never written into L1, L2, or L5 verified claim stores.
+- Verified that unanswerable hallucination traps (`pg_hyperscale_quantum_index`) leave zero residue in the cache.
+
+---
+
+### 2. Empirical Verification & Test Results
+
+- **Collision Isolation Audit (`verify_cache_isolation.py`)**:
+  - `Total Lookups`: **15**
+  - `Total Collisions`: **0**
+  - `False Hit Rate`: **0.00%**
+  - `Audit Status`: **PASSED**
+- **Adversarial Failure Suite (`tests/failure/test_cache_traps.py`)**: 8/8 passed in 1.94s.
+  - `test_cross_version_collision_trap_25_permutations`: Verified 27 cross-version query permutations across 9 settings; 0 collisions.
+  - `test_verify_cache_isolation_runner`: Verified automated standalone audit runner.
+  - `test_semantic_cache_cross_version_isolation`: Verified vector filter blocks 1.0 cosine similarity across version boundaries.
+  - `test_patch_staleness_single_char_tampering`: Verified single-character SHA-256 mutation triggers instant rejection and eviction.
+  - `test_deleted_chunk_staleness_trap`: Verified deleted chunk triggers `PASSAGE_NOT_FOUND` rejection and eviction.
+  - `test_prompt_injection_never_cached`: Verified malicious prompt is neutralized and excluded from cache.
+  - `test_unanswerable_query_never_cached`: Verified unanswerable query never populates cache.
+  - `test_break_it_on_purpose_hardcoded_version_scope_sabotage`: Verified collision spike when version scope is omitted from hashing.
+- **Combined Tier 2 Cache & Memory Test Suite**: **52 / 52 PASSED** in 13.15s across all 5 test modules.
+
+---
+
+### 3. Technical Explain-Back Questions & Interview Defense
+
+#### Q1: What is a cache-collision trap, and why are LLM systems with semantic caching particularly vulnerable to it?
+**Answer**:  
+A cache-collision trap occurs when two semantically similar or identically worded queries that actually require different answers (due to context, version, tenant, or security scope) map to the same cached entry. Standard semantic caches evaluate query similarity purely by cosine distance of text embeddings ($\text{cosine}(q_1, q_2) \ge 0.95$). Because embeddings capture conceptual meaning rather than exact numerical or version tokens, asking *"What is the default value of log_checkpoints?"* for PostgreSQL 14 and 16 produces nearly identical embedding vectors. Without explicit composite scope keys and indexed version payload filters, naive semantic caches return the PostgreSQL 14 answer (`off`) for PostgreSQL 16 (where it is `on`).
+
+#### Q2: Why is a non-zero False-Hit Rate unacceptable in technical documentation RAG?
+**Answer**:  
+In enterprise infrastructure operations, a false-hit returns outdated, non-existent, or dangerous configuration recommendations with high confidence and zero warning. Applying a PostgreSQL 14 setting to PostgreSQL 16 can cause database crash loops (e.g. setting removed parameters like `vacuum_defer_cleanup_age`), silent replication lag, or data corruption. While a cache miss simply adds a few hundred milliseconds of retrieval latency, a false hit results in production outages. Thus, the acceptable False-Hit Rate is strictly 0.00%.
+
+#### Q3: What test guarantees that a prompt injection embedded inside an unverified document is never written to the verified-claim cache?
+**Answer**:  
+EvidenceFlow AI tests this through `test_prompt_injection_never_cached` and pipeline integration gates. Adversarial inputs are evaluated at the `input_guardrail` node before reaching planning, retrieval, or cache insertion. If an injection is detected, the pipeline routes immediately to `abstention` with `is_abstained: True` and an `INJECTION` categorical code. The workflow commit hook in `run_pipeline` and `write_cache` strictly enforces `assert not state.is_abstained and state.l1_passed` as a precondition for writing to L1/L2 or L5 cache. Unverified and abstained queries are discarded, preventing malicious persistence.

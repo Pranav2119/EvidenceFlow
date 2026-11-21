@@ -39,7 +39,7 @@ Every Day/Task strictly follows this 3-phase cadence:
 - [x] Day 9: 5-Layer scoped cache implementation with composite HMAC keys (L1 Exact Match, L2 Semantic, L3 Retrieval, L4 Embedding, L5 Verified-Claim)
 - [x] Day 10: Zero-LLM deterministic cache hit validator & automatic stale-chunk eviction
 - [x] Day 11: FastMCP `memory-cache-mcp` server with role-based write isolation
-- [ ] Day 12: Cache collision trap tests & document patch staleness tests
+- [x] Day 12: Cache collision trap tests & document patch staleness tests
 - [ ] Day 13: Tier 2 Ablation study: Baseline vs. +Memory vs. +Cache vs. +Both (Non-inferiority analysis)
 
 ### Tier 3: Stand Out (Cross-Version Reasoning & Advanced Evaluation)
