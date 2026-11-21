@@ -20,6 +20,15 @@ from evidenceflow.cache.models import (
     SemanticCacheEntry,
     VerifiedClaimEntry,
 )
+from evidenceflow.cache.validator import (
+    CompositeCorpusDatabase,
+    CorpusDatabase,
+    InMemoryCorpusDatabase,
+    PostgresCorpusDatabase,
+    QdrantCorpusDatabase,
+    evict_stale_cache_entry,
+    validate_cache_hit,
+)
 
 __all__ = [
     "generate_scope_key",
@@ -36,4 +45,11 @@ __all__ = [
     "EmbeddingCacheEntry",
     "VerifiedClaimEntry",
     "CacheLookupResult",
+    "CorpusDatabase",
+    "InMemoryCorpusDatabase",
+    "PostgresCorpusDatabase",
+    "QdrantCorpusDatabase",
+    "CompositeCorpusDatabase",
+    "validate_cache_hit",
+    "evict_stale_cache_entry",
 ]

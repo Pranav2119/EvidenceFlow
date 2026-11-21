@@ -71,6 +71,43 @@ class EvidenceQdrantClient:
 
         return results
 
+    def get_passage(self, passage_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieves a single passage point by its unique chunk_id payload.
+        Returns dict containing chunk_id, sha256, content, doc_name, section, title or None.
+        """
+        try:
+            scroll_filter = models.Filter(
+                must=[
+                    models.FieldCondition(
+                        key="chunk_id",
+                        match=models.MatchValue(value=str(passage_id)),
+                    )
+                ]
+            )
+            records, _ = self.client.scroll(
+                collection_name=self.collection_name,
+                scroll_filter=scroll_filter,
+                limit=1,
+                with_payload=True,
+            )
+            if records:
+                p = records[0].payload
+                return {
+                    "status": "success",
+                    "chunk_id": p.get("chunk_id", str(records[0].id)),
+                    "version": p.get("version", ""),
+                    "doc_name": p.get("doc_name", ""),
+                    "section": p.get("section", ""),
+                    "title": p.get("title", ""),
+                    "content": p.get("content", ""),
+                    "sha256": p.get("sha256", ""),
+                }
+            return None
+        except Exception as e:
+            logger.warning("Error fetching passage '%s' from Qdrant: %s", passage_id, e)
+            return None
+
 
 # D3-3: Module-level singleton — one connection pool shared across all retriever_node calls.
 # Never reassigned after first use; safe for single-process benchmark and API workloads.

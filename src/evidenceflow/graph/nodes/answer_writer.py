@@ -2,6 +2,7 @@
 answer_writer.py: Grounded response synthesis node with inline citation markers.
 Uses Gemini LLM when available with strict factual grounding, or falls back to
 deterministic passage extraction for offline/zero-cost environments.
+Integrates cross-version contradiction and evolution context from ContradictionAnalyst.
 """
 
 import re
@@ -26,18 +27,35 @@ def _get_writer_client(api_key: str):
     return _gemini_writer_client
 
 
-def build_grounded_prompt(query: str, version: str, passages: List[Dict[str, Any]]) -> str:
+def build_grounded_prompt(
+    query: str,
+    version: str,
+    passages: List[Dict[str, Any]],
+    contradiction_details: Optional[Dict[str, Any]] = None,
+) -> str:
     """
-    Constructs a strict grounding prompt with passage chunk IDs.
+    Constructs a strict grounding prompt with passage chunk IDs and optional cross-version context.
     """
     passages_text = []
     for i, p in enumerate(passages, 1):
         passages_text.append(
-            f"--- PASSAGE {i} [ID: {p['chunk_id']}] (Doc: {p.get('doc_name')}, Section: {p.get('section')}) ---\n"
+            f"--- PASSAGE {i} [ID: {p['chunk_id']}] (Doc: {p.get('doc_name')}, Section: {p.get('section')}, Version: {p.get('version', version)}) ---\n"
             f"{p.get('content', '')}\n"
         )
 
     context = "\n".join(passages_text)
+
+    analysis_context = ""
+    if contradiction_details:
+        rel = contradiction_details.get("relationship_type", "")
+        reason = contradiction_details.get("reason", "")
+        if rel in {"SUPERSEDES", "CONTRADICTS"}:
+            analysis_context = (
+                f"\nCROSS-VERSION REASONING CONTEXT:\n"
+                f"- Relationship: {rel}\n"
+                f"- Analysis: {reason}\n"
+                f"Instructions: When answering comparative queries across versions, explicitly cite the respective passage chunks for each version and clearly describe the change or relationship.\n\n"
+            )
 
     prompt = (
         f"You are EvidenceFlow, a factual research assistant for PostgreSQL technical documentation.\n"
@@ -49,6 +67,7 @@ def build_grounded_prompt(query: str, version: str, passages: List[Dict[str, Any
         f"3. If the provided passages do not contain the answer, respond: 'Insufficient evidence in the documentation.'\n"
         f"4. For comparative questions across versions (e.g. 'Is it the same in 16?', 'Did it change?'):\n"
         f"   Answer with the documented value for the target version and cite its passage chunk. If an earlier version's passage is present, compare them; otherwise state the target version's value directly and note that the earlier version cannot be confirmed from the retrieved text. Do NOT abstain when the target version's passage contains the answer.\n\n"
+        f"{analysis_context}"
         f"USER QUESTION: {query}\n"
         f"POSTGRESQL VERSION SCOPE: {version}\n\n"
         f"DOCUMENTATION PASSAGES:\n{context}\n\n"
@@ -74,7 +93,10 @@ class FallbackAnswer(str):
 
 
 def deterministic_fallback_answer(
-    query: str, version: str, passages: List[Dict[str, Any]]
+    query: str,
+    version: str,
+    passages: List[Dict[str, Any]],
+    contradiction_details: Optional[Dict[str, Any]] = None,
 ) -> FallbackAnswer:
     """
     Zero-LLM deterministic synthesis template.
@@ -84,6 +106,17 @@ def deterministic_fallback_answer(
     """
     if not passages:
         return FallbackAnswer(f"Insufficient evidence in the PostgreSQL {version} documentation.", "NO_SUBSTANTIVE_EVIDENCE")
+
+    # If cross-version contradiction/evolution was detected, synthesize comparative answer directly
+    if contradiction_details and contradiction_details.get("relationship_type") in {"SUPERSEDES", "CONTRADICTS"}:
+        subj_id = contradiction_details.get("subject_chunk_id")
+        tgt_id = contradiction_details.get("target_chunk_id")
+        reason = contradiction_details.get("reason", "")
+        subj_v = contradiction_details.get("subject_version", version)
+        tgt_v = contradiction_details.get("target_version", "")
+        if subj_id and tgt_id:
+            ans = f"In PostgreSQL {subj_v}, the setting is documented under [^{subj_id}]. In PostgreSQL {tgt_v}, it is documented under [^{tgt_id}]. {reason}"
+            return FallbackAnswer(ans, None)
 
     # Identify recognized setting names mentioned in query
     from evidenceflow.memory.corpus_settings import get_corpus_settings
@@ -297,6 +330,7 @@ def answer_writer_node(state: EvidenceFlowState) -> Dict[str, Any]:
     target_version = state.target_version or "16"
     passages = list(state.retrieved_passages)
     existing_audit = list(state.audit_trail)
+    contradiction_details = getattr(state, "contradiction_details", None)
 
     if not passages:
         reason = f"No relevant passages found for PostgreSQL {target_version}."
@@ -334,7 +368,7 @@ def answer_writer_node(state: EvidenceFlowState) -> Dict[str, Any]:
             from google.genai.errors import APIError, ClientError, ServerError
 
             client = _get_writer_client(settings.GEMINI_API_KEY)
-            prompt = build_grounded_prompt(query, target_version, passages)
+            prompt = build_grounded_prompt(query, target_version, passages, contradiction_details=contradiction_details)
 
             # Retry up to 2 times on transient 503/429 with isolated pure API timing [Rule m]
             response = None
@@ -374,7 +408,7 @@ def answer_writer_node(state: EvidenceFlowState) -> Dict[str, Any]:
                         "total_tokens": getattr(response.usage_metadata, "total_token_count", 0),
                     }
             else:
-                draft_answer, fallback_code = deterministic_fallback_answer(query, target_version, passages)
+                draft_answer, fallback_code = deterministic_fallback_answer(query, target_version, passages, contradiction_details=contradiction_details)
                 synthesis_mode = "fallback"
                 if fallback_code:
                     is_abstained = True
@@ -384,15 +418,15 @@ def answer_writer_node(state: EvidenceFlowState) -> Dict[str, Any]:
         # Catch GenAI and network/transport errors (including RemoteProtocolError)
         except (APIError, ClientError, ServerError, ConnectionError, TimeoutError, httpx.HTTPError, Exception) as e:
             logger.warning("Gemini generation API call failed (%s), falling back to deterministic synthesis.", e)
-            draft_answer, fallback_code = deterministic_fallback_answer(query, target_version, passages)
+            draft_answer, fallback_code = deterministic_fallback_answer(query, target_version, passages, contradiction_details=contradiction_details)
             synthesis_mode = "fallback"
             if fallback_code:
                 is_abstained = True
                 abstention_code = fallback_code
-                abstention_reason = f"Deterministic fallback could not answer query ({fallback_code})." 
+                abstention_reason = f"Deterministic fallback could not answer query ({fallback_code})."
     else:
         logger.info("No active Gemini API key configured. Using deterministic synthesis.")
-        draft_answer, fallback_code = deterministic_fallback_answer(query, target_version, passages)
+        draft_answer, fallback_code = deterministic_fallback_answer(query, target_version, passages, contradiction_details=contradiction_details)
         synthesis_mode = "fallback"
         if fallback_code:
             is_abstained = True

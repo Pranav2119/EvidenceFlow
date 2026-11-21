@@ -585,3 +585,180 @@ def resolve_entity_for_turn(
         "rewritten_query": rewritten_query,
         "latency_ms": round(latency_ms, 3),
     }
+
+
+
+def record_claim_relationship(
+    subject_claim_id: str,
+    target_claim_id: str,
+    rel_type: str = "SUPERSEDES",
+    reason: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> bool:
+    """
+    Creates a directed relationship between two Claim nodes in Neo4j.
+    Supported relationship types:
+      - SUPERSEDES: subject claim represents newer/updated technical behavior that supersedes target.
+      - CONTRADICTS: subject claim and target claim assert conflicting/contradictory facts.
+    """
+    rel = rel_type.strip().upper()
+    if rel not in {"SUPERSEDES", "CONTRADICTS"}:
+        raise ValueError(f"Invalid claim relationship type '{rel_type}'. Must be SUPERSEDES or CONTRADICTS.")
+
+    meta = dict(metadata or {})
+    try:
+        with get_neo4j_session() as session:
+            cypher = (
+                """
+                MATCH (c1:Claim {id: $subject_id})
+                MATCH (c2:Claim {id: $target_id})
+                MERGE (c1)-[r:SUPERSEDES]->(c2)
+                SET r.reason = $reason,
+                    r.created_at = datetime(),
+                    r += $meta
+                """
+                if rel == "SUPERSEDES"
+                else """
+                MATCH (c1:Claim {id: $subject_id})
+                MATCH (c2:Claim {id: $target_id})
+                MERGE (c1)-[r:CONTRADICTS]->(c2)
+                SET r.reason = $reason,
+                    r.created_at = datetime(),
+                    r += $meta
+                """
+            )
+            session.run(
+                cypher,
+                {
+                    "subject_id": subject_claim_id,
+                    "target_id": target_claim_id,
+                    "reason": reason or "",
+                    "meta": meta,
+                },
+            )
+        logger.info("Recorded Claim relationship (:Claim {id: '%s'})-[:%s]->(:Claim {id: '%s'})", subject_claim_id, rel, target_claim_id)
+        return True
+    except Exception as e:
+        logger.error("Failed to record claim relationship (%s -> %s): %s", subject_claim_id, target_claim_id, e)
+        return False
+
+
+def get_claim_relationships(claim_id: str) -> List[Dict[str, Any]]:
+    """
+    Retrieves all incoming and outgoing SUPERSEDES and CONTRADICTS relationships for a Claim.
+    """
+    try:
+        with get_neo4j_session() as session:
+            result = session.run(
+                """
+                MATCH (c:Claim {id: $claim_id})-[r:SUPERSEDES|CONTRADICTS]->(target:Claim)
+                RETURN type(r) AS rel_type,
+                       'outgoing' AS direction,
+                       c.id AS subject_claim_id,
+                       target.id AS target_claim_id,
+                       target.text AS target_text,
+                       target.verdict AS target_verdict,
+                       r.reason AS reason,
+                       toString(r.created_at) AS created_at
+                UNION
+                MATCH (source:Claim)-[r:SUPERSEDES|CONTRADICTS]->(c:Claim {id: $claim_id})
+                RETURN type(r) AS rel_type,
+                       'incoming' AS direction,
+                       source.id AS subject_claim_id,
+                       c.id AS target_claim_id,
+                       source.text AS target_text,
+                       source.verdict AS target_verdict,
+                       r.reason AS reason,
+                       toString(r.created_at) AS created_at
+                """,
+                {"claim_id": claim_id},
+            )
+            return [dict(record) for record in result]
+    except Exception as e:
+        logger.error("Failed to fetch relationships for claim '%s': %s", claim_id, e)
+        return []
+
+
+def record_passage_relationship(
+    subject_passage_id: str,
+    target_passage_id: str,
+    rel_type: str = "SUPERSEDES",
+    reason: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> bool:
+    """
+    Creates a directed SUPERSEDES or CONTRADICTS relationship between two Passage nodes.
+    Ensures Passage nodes exist via MERGE before creating the edge.
+    """
+    rel = rel_type.strip().upper()
+    if rel not in {"SUPERSEDES", "CONTRADICTS"}:
+        raise ValueError(f"Invalid passage relationship type '{rel_type}'. Must be SUPERSEDES or CONTRADICTS.")
+
+    meta = dict(metadata or {})
+    try:
+        with get_neo4j_session() as session:
+            cypher = (
+                """
+                MERGE (p1:Passage {passage_id: $subject_id})
+                MERGE (p2:Passage {passage_id: $target_id})
+                MERGE (p1)-[r:SUPERSEDES]->(p2)
+                SET r.reason = $reason,
+                    r.created_at = datetime(),
+                    r += $meta
+                """
+                if rel == "SUPERSEDES"
+                else """
+                MERGE (p1:Passage {passage_id: $subject_id})
+                MERGE (p2:Passage {passage_id: $target_id})
+                MERGE (p1)-[r:CONTRADICTS]->(p2)
+                SET r.reason = $reason,
+                    r.created_at = datetime(),
+                    r += $meta
+                """
+            )
+            session.run(
+                cypher,
+                {
+                    "subject_id": subject_passage_id,
+                    "target_id": target_passage_id,
+                    "reason": reason or "",
+                    "meta": meta,
+                },
+            )
+        logger.info("Recorded Passage relationship (:Passage {passage_id: '%s'})-[:%s]->(:Passage {passage_id: '%s'})", subject_passage_id, rel, target_passage_id)
+        return True
+    except Exception as e:
+        logger.error("Failed to record passage relationship (%s -> %s): %s", subject_passage_id, target_passage_id, e)
+        return False
+
+
+def get_passage_relationships(passage_id: str) -> List[Dict[str, Any]]:
+    """
+    Retrieves all incoming and outgoing SUPERSEDES and CONTRADICTS relationships for a Passage.
+    """
+    try:
+        with get_neo4j_session() as session:
+            result = session.run(
+                """
+                MATCH (p:Passage {passage_id: $passage_id})-[r:SUPERSEDES|CONTRADICTS]->(target:Passage)
+                RETURN type(r) AS rel_type,
+                       'outgoing' AS direction,
+                       p.passage_id AS subject_passage_id,
+                       target.passage_id AS target_passage_id,
+                       r.reason AS reason,
+                       toString(r.created_at) AS created_at
+                UNION
+                MATCH (source:Passage)-[r:SUPERSEDES|CONTRADICTS]->(p:Passage {passage_id: $passage_id})
+                RETURN type(r) AS rel_type,
+                       'incoming' AS direction,
+                       source.passage_id AS subject_passage_id,
+                       p.passage_id AS target_passage_id,
+                       r.reason AS reason,
+                       toString(r.created_at) AS created_at
+                """,
+                {"passage_id": passage_id},
+            )
+            return [dict(record) for record in result]
+    except Exception as e:
+        logger.error("Failed to fetch relationships for passage '%s': %s", passage_id, e)
+        return []

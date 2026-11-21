@@ -232,6 +232,7 @@ def run_benchmark(
         q_prec: Optional[float] = None
         q_crecall: Optional[float] = None
         q_val_acc: Optional[bool] = None
+        q_draft_val_acc: Optional[bool] = None
 
         if should_abstain:
             # Question was expected to be refused
