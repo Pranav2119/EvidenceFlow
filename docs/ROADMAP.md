@@ -48,4 +48,4 @@ Every Day/Task strictly follows this 3-phase cadence:
 - [x] Day 15: Independent L2 Judge for contested claims (selective activation via ADR-005)
 - [x] Day 16: Benchmark comparison: EvidenceFlow vs. pgvector + full-text vs. recursive SQL
 - [x] Day 17: External API FastMCP server with rate-limiting & schema validation
-- [ ] CI regression test gate (preventing recall/groundedness regressions)
+- [x] Day 18: CI regression test gate (preventing recall/groundedness regressions) & release packaging

@@ -969,3 +969,88 @@ In LangGraph, node functions execute within a directed state graph. If a tool ra
 #### Q3: Why should external API responses always be parsed into Pydantic models before being injected into the agent's prompt?
 **Answer**:  
 Injecting raw, unvalidated JSON from third-party APIs directly into an LLM context window exposes the system to prompt injection, silent schema drift, and token bloat. An upstream API can change key names, introduce unexpected null values, or return multi-megabyte payloads that overflow the context window and cause catastrophic hallucinations. Validating payloads against strict Pydantic schemas acts as a semantic firewall: it strips extraneous fields, enforces strict data types, validates expected structures, and guarantees that only clean, verified technical metadata enters the agent's prompt context.
+
+
+---
+
+## Session 17: Day 18 CI Regression Test Gate & Release Packaging
+**Date**: 2026-11-21  
+**Focus**: Continuous Integration (CI) metric regression test gate ([`src/evidenceflow/eval/ci_gate.py`](file:///C:/Users/Pranav%20Sakhalkar/Desktop/GitHub_AI/EvidenceFlowSetup/EvidenceFlow/src/evidenceflow/eval/ci_gate.py)), GitHub Actions CI workflow ([`.github/workflows/ci.yml`](file:///C:/Users/Pranav%20Sakhalkar/Desktop/GitHub_AI/EvidenceFlowSetup/EvidenceFlow/.github/workflows/ci.yml)), automated threshold enforcement (Groundedness $\ge 95\%$, Recall@5 $\ge 85\%$, Cache False-Hit Rate $= 0.0\%$, Abstention $= 100\%$), unit/failure tests in [`tests/test_ci_gate.py`](file:///C:/Users/Pranav%20Sakhalkar/Desktop/GitHub_AI/EvidenceFlowSetup/EvidenceFlow/tests/test_ci_gate.py), and executing the entire repository test suite (248/248 tests passing).
+
+---
+
+### 1. Concepts Mastered & Architectural Defenses
+
+#### A. Metric Regression Gates in Production AI Engineering
+- Traditional software CI gates rely on unit test pass/fail and line coverage (e.g. $\ge 80\%$).
+- In agentic AI systems, code can compile and pass all unit tests while **silently suffering catastrophic behavioral quality regressions**:
+  - A subtle prompt modification can cause citation groundedness to drop from 98% to 85%.
+  - Chunker tuning can drop Recall@5 on versioned parameters by 20%.
+  - Cache key modifications can introduce cross-version collisions or serve stale data.
+- **The EvidenceFlow Defense**: EvidenceFlow AI enforces **automated metric regression gates**: if any pull request degrades Groundedness below 95.0%, Recall@5 below 85.0%, or causes non-zero cache false hits, `ci_gate.py` **exits with code 1 and automatically blocks the Pull Request merge**.
+
+#### B. Fast, Deterministic, Zero-LLM CI Execution
+- Calling live proprietary LLMs (Gemini, OpenAI) inside every CI build is cost-prohibitive, introduces rate-limit instability, and creates flakiness from stochastic LLM responses.
+- The CI gate runs in **sub-2 seconds (1.25s)** using deterministic verification:
+  1. **Qdrant Single-Stage Filtered Vector Recall**: Directly evaluates dense vector coverage against canonical versioned parameters.
+  2. **Deterministic Value-Presence & Citation Fidelity**: Evaluates numerical quantities and configuration enums against verified source passages.
+  3. **Scoped Cache Probing**: Injects synthetic cross-version probes, tampered config hashes, and invalidated chunk IDs, asserting exact $0.0\%$ false-hit rates.
+  4. **Security Guardrail Evaluation**: Injects adversarial prompt injections and out-of-scope attacks, asserting 100% rejection.
+
+---
+
+### 2. Empirical Verification & Test Results
+
+- **Automated CI Quality Gate Run (`uv run python -m evidenceflow.eval.ci_gate`)**:
+
+```
+============================================================================
+ EvidenceFlow AI - Continuous Integration (CI) Quality Regression Gate
+============================================================================
+Metric Name                        Observed     Threshold      Status    
+----------------------------------------------------------------------------
+Citation Groundedness              100.0%       >= 95.0%       [PASS]    
+Information Retrieval Recall@5     90.0%        >= 85.0%       [PASS]    
+Cache False-Hit Rate               0.0%         <= 0.0%        [PASS]    
+Security Abstention Accuracy       100.0%       >= 100.0%      [PASS]    
+----------------------------------------------------------------------------
+OVERALL VERDICT: ALL QUALITY GATES PASSED (Duration: 1.25s)
+Exit Code: 0 (Safe for Pull Request Merge)
+============================================================================
+```
+
+- **Break It on Purpose Test (`test_break_it_on_purpose_ci_gate_cli_exit_code_1`)**:
+  - Executed `ci_gate.py --break-it` setting an impossible Recall@5 threshold (99.9%).
+  - Gate caught the regression (`90.0% >= 99.9% [FAIL *REGRESSION*]`), printed regression diagnostics, and exited with code `1`.
+
+- **Unit Test Suite ([`tests/test_ci_gate.py`](file:///C:/Users/Pranav%20Sakhalkar/Desktop/GitHub_AI/EvidenceFlowSetup/EvidenceFlow/tests/test_ci_gate.py))**:
+  - `test_ci_gate_all_thresholds_pass`: Verified all production thresholds pass in <3s.
+  - `test_ci_gate_rejects_groundedness_regression`: Verified rejection when Groundedness drops below 95%.
+  - `test_ci_gate_rejects_recall_regression`: Verified rejection when Recall@5 drops below 85%.
+  - `test_ci_gate_rejects_cache_false_hits`: Verified rejection when cache false-hit rate exceeds 0.0%.
+  - `test_break_it_on_purpose_ci_gate_cli_exit_code_1`: Verified exit code 1 enforcement.
+  - **Result: 5/5 passed in 10.82s**.
+
+- **Complete Repository Test Suite (`uv run pytest tests/ -v`)**:
+  - **Result: `248 passed, 1 warning in 51.54s (100% passing)`** across all modules:
+    - Tier 1: Baseline state machine, guardrails, checkpointers, and corpus MCP.
+    - Tier 2: Neo4j conversational memory graph, 5-layer scoped cache, deterministic validator, cache traps, and ablation runner.
+    - Tier 3: Contradiction Analyst, independent L2 Judge, competitive benchmark comparator, external FastMCP resilience server, and CI quality regression gate.
+
+---
+
+### 3. Technical Explain-Back Questions & Interview Defense
+
+#### Q1: Why are standard software CI tests (unit tests, linting) insufficient for preventing AI quality regressions?
+**Answer**:  
+Standard software CI tests verify code syntax, deterministic functions, and schema contracts, but are completely blind to stochastic and retrieval quality degradation. An engineer could modify a prompt template to be more concise, change the BM25 $k_1$ parameter, or adjust vector normalization. All unit tests will pass because the code executes without syntax errors, yet in production, Citation Groundedness might plummet from 98% to 80% or target-version Recall@5 might drop by half. AI systems require **metric regression gates** in CI that run benchmark workloads and assert empirical order statistics (Groundedness $\ge 95\%$, Recall@5 $\ge 85\%$) before code can merge.
+
+#### Q2: What are the 3 non-negotiable metric thresholds enforced by EvidenceFlow AI's CI gate?
+**Answer**:  
+1. **Citation Groundedness $\ge 95.0\%$**: Guarantees that at least 19 out of every 20 assertions are strictly bound to verified documentation chunks and contain accurate numerical parameters.
+2. **Information Retrieval Recall@5 $\ge 85.0\%$**: Guarantees that for version-scoped technical queries, the correct ground-truth chunk is present in the top-5 retrieved passages, preventing information starvation.
+3. **Cache False-Hit Rate $= 0.0\%$**: A strict zero-tolerance gate ensuring that no cached entry is served across different version scopes, under tampered configuration hashes, or following source passage invalidation.
+
+#### Q3: How does the CI gate test cache integrity without calling live LLMs?
+**Answer**:  
+Calling proprietary LLMs inside CI builds introduces cost, rate-limiting, and network flakiness. Our CI gate evaluates cache integrity through deterministic cryptographic probing: it primes the L1 Exact cache with a verified entry under PostgreSQL 16 scope, then executes 4 synthetic probes: (1) querying under PostgreSQL 14 scope (asserting 0 cross-version leaks), (2) querying under a tampered configuration hash (asserting 0 configuration leaks), (3) querying the exact key (asserting valid hit delivery), and (4) querying after chunk invalidation (asserting stale eviction). This achieves mathematical proof of cache isolation in under 5 milliseconds with zero external API calls.
