@@ -5,6 +5,7 @@ nodes: Discrete pipeline steps in the EvidenceFlow LangGraph workflow.
 from evidenceflow.graph.nodes.planner import planner_node
 from evidenceflow.graph.nodes.retriever import retriever_node
 from evidenceflow.graph.nodes.contradiction import contradiction_analyst_node
+from evidenceflow.graph.nodes.judge import l2_judge_node, should_invoke_l2_judge
 from evidenceflow.graph.nodes.answer_writer import answer_writer_node
 from evidenceflow.graph.nodes.verifier import verifier_node
 from evidenceflow.graph.nodes.abstention import abstention_node
@@ -21,6 +22,8 @@ __all__ = [
     "planner_node",
     "retriever_node",
     "contradiction_analyst_node",
+    "l2_judge_node",
+    "should_invoke_l2_judge",
     "answer_writer_node",
     "verifier_node",
     "abstention_node",

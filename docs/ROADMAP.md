@@ -45,7 +45,7 @@ Every Day/Task strictly follows this 3-phase cadence:
 ### Tier 3: Stand Out (Cross-Version Reasoning & Advanced Evaluation)
 
 - [x] Day 14: Contradiction Analyst agent with `SUPERSEDES` and `CONTRADICTS` graph edges
-- [ ] Independent L2 Judge for contested claims
+- [x] Day 15: Independent L2 Judge for contested claims (selective activation via ADR-005)
 - [ ] Benchmark comparison: EvidenceFlow vs. pgvector + full-text vs. recursive SQL
 - [ ] External API FastMCP server with rate-limiting & schema validation
 - [ ] CI regression test gate (preventing recall/groundedness regressions)

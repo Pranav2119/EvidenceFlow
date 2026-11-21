@@ -48,8 +48,15 @@ class EvidenceFlowState(BaseModel):
     # --- Deterministic Verification & Abstention ---
     l1_passed: bool = Field(default=False, description="Whether L1 deterministic citation-existence check passed")
     is_abstained: bool = Field(default=False, description="True if evidence is insufficient or question is out of scope")
-    abstention_code: Optional[str] = Field(default=None, description="Categorical refusal code (e.g. INJECTION, OUT_OF_SCOPE, MISSING_KEYWORD, LOW_SCORE, UNSUPPORTED_VERSION, FAKE_CITATION, VALUE_MISMATCH)")
+    abstention_code: Optional[str] = Field(default=None, description="Categorical refusal code (e.g. INJECTION, OUT_OF_SCOPE, MISSING_KEYWORD, LOW_SCORE, UNSUPPORTED_VERSION, FAKE_CITATION, VALUE_MISMATCH, L2_REJECTED)")
     abstention_reason: Optional[str] = Field(default=None, description="Structured rationale explaining why the system abstained")
+
+    # --- Independent L2 Judge Telemetry ---
+    l2_invoked: bool = Field(default=False, description="Whether the independent L2 Judge was conditionally invoked")
+    l2_passed: bool = Field(default=False, description="Whether the L2 Judge affirmed the answer and claim entailment")
+    l2_verdict: Optional[str] = Field(default=None, description="Verdict from L2 Judge: AFFIRMED, REJECTED, REVISED")
+    l2_score: Optional[float] = Field(default=None, description="Groundedness / Entailment score assigned by L2 Judge (0.0 to 1.0)")
+    l2_reasoning: Optional[str] = Field(default=None, description="Detailed explanation or arbitration rationale from the L2 Judge")
 
     # --- Audit Trail ---
     audit_trail: List[Dict[str, Any]] = Field(default_factory=list, description="Immutable step ledger recording node transitions and metrics")

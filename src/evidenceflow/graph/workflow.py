@@ -21,6 +21,8 @@ from evidenceflow.graph.nodes import (
     planner_node,
     retriever_node,
     contradiction_analyst_node,
+    l2_judge_node,
+    should_invoke_l2_judge,
     answer_writer_node,
     verifier_node,
     abstention_node,
@@ -86,8 +88,18 @@ def route_after_retriever(state: EvidenceFlowState) -> str:
 
 
 def route_after_verifier(state: EvidenceFlowState) -> str:
-    """Routes to abstention if L1 citation check or L1.5 value presence check failed."""
+    """Routes to abstention if L1 citation check or L1.5 value presence check failed.
+    If passed, checks if selective L2 Judge should be invoked for contested/cross-version claims."""
     if not state.l1_passed or state.is_abstained:
+        return "abstention"
+    if should_invoke_l2_judge(state):
+        return "judge"
+    return END
+
+
+def route_after_judge(state: EvidenceFlowState) -> str:
+    """Routes to abstention if L2 Judge rejected the answer; otherwise END."""
+    if not state.l2_passed or state.is_abstained:
         return "abstention"
     return END
 
@@ -117,6 +129,7 @@ def create_evidenceflow_graph(
         builder.add_node("contradiction_analyst", audit_node_wrapper(contradiction_analyst_node, "contradiction_analyst"))
         builder.add_node("answer_writer", audit_node_wrapper(answer_writer_node, "answer_writer"))
         builder.add_node("verifier", audit_node_wrapper(verifier_node, "verifier"))
+        builder.add_node("judge", audit_node_wrapper(l2_judge_node, "judge"))
         builder.add_node("abstention", audit_node_wrapper(abstention_node, "abstention"))
     else:
         if enable_memory:
@@ -129,6 +142,7 @@ def create_evidenceflow_graph(
         builder.add_node("contradiction_analyst", contradiction_analyst_node)
         builder.add_node("answer_writer", answer_writer_node)
         builder.add_node("verifier", verifier_node)
+        builder.add_node("judge", l2_judge_node)
         builder.add_node("abstention", abstention_node)
 
     # 2. Register Edges with Conditional Branches
@@ -171,6 +185,11 @@ def create_evidenceflow_graph(
     builder.add_conditional_edges(
         "verifier",
         route_after_verifier,
+        {"abstention": "abstention", "judge": "judge", END: END},
+    )
+    builder.add_conditional_edges(
+        "judge",
+        route_after_judge,
         {"abstention": "abstention", END: END},
     )
     builder.add_edge("abstention", END)
@@ -410,6 +429,14 @@ def main():
     print(f"    Is Abstained: {state.is_abstained}")
     if state.abstention_reason:
         print(f"    Abstention Reason: {state.abstention_reason}")
+
+    if state.l2_invoked:
+        print(f"\n[5.5] L2 Judge Arbitration:")
+        print(f"      Invoked:   {state.l2_invoked}")
+        print(f"      Passed:    {state.l2_passed}")
+        print(f"      Verdict:   {state.l2_verdict}")
+        print(f"      Score:     {state.l2_score}")
+        print(f"      Reasoning: {state.l2_reasoning}")
 
     if state.citations:
         print(f"\n[6] Citations ({len(state.citations)}):")
