@@ -412,3 +412,74 @@ Following strict machine learning integrity protocols, the 25-question held-out 
   - Verified version-wide and passage-specific invalidations.
   - Verified orchestrated `lookup()` fast-path.
 - **Break It on Purpose**: Demonstrated cross-version cache collision when version scope is omitted from hashing (`naive_k1 == naive_k2`), confirming the critical necessity of composite HMAC keys.
+
+
+---
+
+## Session 9: Day 10 Zero-LLM Deterministic Cache Hit Validator & Stale Chunk Eviction
+**Date**: 2026-11-21  
+**Focus**: Deterministic cache hit validator (`validator.py`), LangGraph `CacheGatekeeper` node (`cache_gatekeeper.py`), live corpus SHA-256 hash matching, automatic stale-chunk eviction on documentation patches, and zero-token latency optimization.
+
+---
+
+### 1. Concepts Mastered & Architectural Defenses
+
+#### A. Zero-LLM Deterministic Hit Validation
+- **The LLM Cache Gate Fallacy**: If a cache hit required an LLM call to verify its factual accuracy or semantic alignment, caching would provide zero financial or latency benefit.
+- **Pure Code Determinism**: `validate_cache_hit` executes in pure, deterministic Python code (sub-millisecond execution time, ~0.05–0.5 ms). It validates:
+  1. Runtime configuration version parity (`entry.config_version == CURRENT_CONFIG`).
+  2. Guardrail version parity (`entry.guardrail_version == CURRENT_GUARDRAILS`).
+  3. Grounded citation non-emptiness (ungrounded answers with 0 citations are rejected).
+  4. Exact cryptographic content hash match (`live_sha256 == cached_sha256`) for every cited passage in the entry.
+- **Token Guarantee**: On a validated cache hit, zero LLM tokens are requested, zero prompt tokens are evaluated, and the planner/retriever/LLM pipeline is entirely bypassed.
+
+#### B. Silent Invalidation via Corpus Chunk SHA-256 Tracking
+- **The Documentation Patch Staleness Hazard**: When a corpus chunk is updated (e.g. correcting a default parameter from `100` to `200` in documentation), cached answers citing that chunk become instantly stale.
+- **Decoupled Eviction Trigger**: Instead of requiring a complete cache wipe on every document patch, each cached entry binds the SHA-256 hash of its cited chunks.
+- When `CacheGatekeeper` detects `live_hash != cached_hash` or `live_hash is None` (chunk deleted/renamed), it automatically triggers `evict_stale_cache_entry`, purging only the invalidated entries citing that passage across L1, L2, and L5.
+
+#### C. Cache Miss vs. Cache Rejection Distinction
+- **Cache Miss**: The requested query has no matching entry in L1 (exact scope key) or L2 (cosine similarity $\ge 0.96$). The pipeline routes directly to the Planner node for fresh retrieval.
+- **Cache Rejection**: The query found a key or semantic match in the cache, but deterministic validation rejected it because a cited document chunk was updated/deleted, or configuration/guardrail versions changed. The Gatekeeper logs `action: "cache_rejection"`, evicts the stale entry, and routes to the Planner node for fresh generation.
+
+#### D. LangGraph State Machine Integration
+- Added `cache_gatekeeper` node after `input_guardrail`:
+  - `route_after_input_guardrail`: Routes to `cache_gatekeeper` (or `abstention` if input guardrail blocked).
+  - `route_after_cache_gatekeeper`: If `state.cache_hit` is `True`, routes directly to `END`! Otherwise routes to `planner`.
+- When a fresh run succeeds and passes L1 verification, verified answers are saved to L1 Exact cache with their cited chunk hashes.
+
+---
+
+### 2. Empirical Verification & Test Results
+
+- **Cache Validator Suite (`test_cache_validator.py`)**: 11/11 passed in 14.99s.
+  - `test_exact_hit_validation_success`: Confirmed valid hits return `is_valid: True` in <0.1ms.
+  - `test_hash_mismatch_staleness_rejection`: Confirmed modified hashes trigger `HASH_MISMATCH` rejection.
+  - `test_deleted_chunk_rejection`: Confirmed deleted chunks trigger `PASSAGE_NOT_FOUND` rejection.
+  - `test_no_citations_rejection`: Confirmed ungrounded answers are refused from being served.
+  - `test_config_and_guardrail_version_mismatch`: Confirmed version bumps reject cache entries.
+  - `test_automatic_stale_eviction`: Confirmed stale chunk eviction removes entries from LRU store.
+  - `test_cache_gatekeeper_node_miss`: Confirmed miss sets `cache_hit: False` with 0 tokens.
+  - `test_cache_gatekeeper_node_hit`: Confirmed hit returns verified response in <5ms with 0 tokens.
+  - `test_cache_gatekeeper_node_stale_rejection`: Confirmed stale entry eviction and route to planner.
+  - `test_end_to_end_workflow_two_turn_cache_acceleration`: Verified 2-run flow (Run 1 Miss -> Generation -> Cache Store; Run 2 Hit -> Gatekeeper interception).
+  - `test_break_it_on_purpose_tampered_hash_eviction`: Verified Break It on Purpose exercise.
+- **Combined Cache Suite (`test_cache_keys.py`, `test_cache_manager.py`, `test_cache_validator.py`)**: 35/35 passed.
+- **Regression Suite**: 0 regressions across core guardrail and verifier precision tests.
+
+---
+
+### 3. Technical Explain-Back Questions & Interview Defense
+
+#### Q1: How does EvidenceFlow AI guarantee that a cache hit never consumes LLM tokens?
+**Answer**:  
+The `CacheGatekeeper` node sits immediately after the `input_guardrail` node in the LangGraph state machine. When an incoming query matches an L1 composite scope key or L2 semantic vector, the Gatekeeper validates the entry using pure, deterministic Python code (comparing cited chunk SHA-256 hashes against live corpus records, plus verifying runtime config and guardrail versions). If validation passes, the state machine routes directly to `END`, completely bypassing the `planner`, `retriever`, and `answer_writer` LLM nodes. It emits `prompt_tokens: 0`, `candidate_tokens: 0`, and `total_tokens: 0` in the step ledger, completing in sub-5ms.
+
+#### Q2: If a technical documentation typo is corrected in the database, how does the system know the cached answer is stale without clearing the entire cache?
+**Answer**:  
+EvidenceFlow AI uses decoupled, content-addressed hash validation. Every cached response stores `CachedCitation` metadata containing the chunk ID and the exact SHA-256 content hash of the chunk as it existed when the answer was verified. When a query hits the cache, the `CacheGatekeeper` queries the live corpus for the current hash of each cited passage. If a document patch changed even a single character in chunk $C_i$, its live SHA-256 hash differs from the cached hash ($H_{live} \ne H_{cached}$). The Gatekeeper detects this mismatch, rejects the hit, executes surgical eviction (`invalidate_by_passage(C_i)`), and routes to the Planner for fresh retrieval. Unrelated cache entries citing untouched chunks remain intact.
+
+#### Q3: What is the difference between a cache miss and a cache rejection?
+**Answer**:  
+A **cache miss** occurs when no entry exists in L1 Exact match (key not found) or L2 Semantic cache (cosine similarity $< 0.96$). It is an ordinary event indicating a new or un-cached query.  
+A **cache rejection** occurs when an entry *does* exist in the cache, but is actively disqualified by the `CacheGatekeeper` during deterministic validation. Disqualification happens if cited chunks were modified (hash mismatch), cited chunks were deleted (passage not found), or runtime configuration/guardrail versions were bumped. A cache rejection triggers automatic eviction of the stale entry to heal the cache.

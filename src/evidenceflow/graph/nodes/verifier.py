@@ -562,15 +562,23 @@ def verifier_node(state: EvidenceFlowState) -> Dict[str, Any]:
                     }
 
     # Mark Citations as verified
+    passage_hashes = {
+        (p.get("chunk_id") or p.get("id")): (p.get("sha256") or p.get("chunk_hash"))
+        for p in passages
+    }
     updated_citations: List[Union[Citation, Dict[str, Any]]] = []
     for c in citations:
         if isinstance(c, Citation):
             is_valid = c.chunk_id in retrieved_chunk_ids
-            updated_citations.append(c.model_copy(update={"is_verified": is_valid}))
+            c_hash = c.chunk_hash or passage_hashes.get(c.chunk_id)
+            updated_citations.append(c.model_copy(update={"is_verified": is_valid, "chunk_hash": c_hash}))
         else:
             c_copy = dict(c)
-            if c_copy.get("chunk_id") in retrieved_chunk_ids:
+            cid = c_copy.get("chunk_id")
+            if cid in retrieved_chunk_ids:
                 c_copy["is_verified"] = True
+            if not c_copy.get("chunk_hash") and cid in passage_hashes:
+                c_copy["chunk_hash"] = passage_hashes[cid]
             updated_citations.append(c_copy)
 
     audit_entry = {

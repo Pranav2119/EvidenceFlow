@@ -8,6 +8,13 @@ from evidenceflow.graph.nodes.answer_writer import answer_writer_node
 from evidenceflow.graph.nodes.verifier import verifier_node
 from evidenceflow.graph.nodes.abstention import abstention_node
 from evidenceflow.graph.nodes.memory_resolver import memory_resolver_node
+from evidenceflow.graph.nodes.cache_gatekeeper import (
+    cache_gatekeeper_node,
+    get_cache_manager,
+    set_cache_manager,
+    get_corpus_database,
+    set_corpus_database,
+)
 
 __all__ = [
     "planner_node",
@@ -16,4 +23,9 @@ __all__ = [
     "verifier_node",
     "abstention_node",
     "memory_resolver_node",
+    "cache_gatekeeper_node",
+    "get_cache_manager",
+    "set_cache_manager",
+    "get_corpus_database",
+    "set_corpus_database",
 ]
