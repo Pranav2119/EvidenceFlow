@@ -668,3 +668,89 @@ Non-inferiority testing statistically proves with 95% confidence that our cachin
 #### Q3: If caching reduced latency by 85% and tokens by 80%, but dropped citation precision from 98% to 91%, would you deploy it to production? Explain why or why not.
 **Answer**:  
 Absolutely not. In technical systems and database administration, precision is non-negotiable—a 7% drop in citation precision means 1 out of every 14 cited evidence chunks is ungrounded or hallucinated. An engineer configuring database replication or memory settings based on ungrounded parameters risks database crashes, corruption, or outages. In our architecture, the non-inferiority margin is strictly set to $\Delta = 2\%$. Any optimization that breaches this threshold fails the statistical non-inferiority gate and is automatically blocked from production deployment.
+
+
+---
+
+## Session 13: Day 14 Contradiction Analyst & Cross-Version Graph Reasoning
+**Date**: 2026-11-21  
+**Focus**: Contradiction Analyst agent node (`src/evidenceflow/graph/nodes/contradiction.py`), Neo4j `:SUPERSEDES` and `:CONTRADICTS` directed edges (`src/evidenceflow/memory/graph_client.py`), cross-version query planning and retrieval (`planner.py`, `retriever.py`), dual-version synthesis in `answer_writer.py`, comprehensive test suite (`tests/test_contradiction.py`), and live CLI comparative validation.
+
+---
+
+### 1. Concepts Mastered & Architectural Defenses
+
+#### A. Temporal Evolution (`SUPERSEDES`) vs. Direct Error (`CONTRADICTS`)
+- In multi-version documentation systems, differences between versions usually represent intentional architectural evolutions, deprecations, or parameter type changes rather than factual errors.
+- **`SUPERSEDES` Relationship**:
+  - Directed edge from newer version passage/claim to older version passage/claim: `(:Passage {version: '16'})-[:SUPERSEDES]->(:Passage {version: '14'})`.
+  - Triggered when parameter default values change (e.g. `vacuum_cost_page_dirty` 20 $\rightarrow$ 0), parameter types widen (e.g. `wal_compression` boolean `off/on` $\rightarrow$ enum `pglz, lz4, zstd`), or features are replaced.
+- **`CONTRADICTS` Relationship**:
+  - Symmetric or opposing edge between passages within the same scope or mutually incompatible statements: `(:Passage)-[:CONTRADICTS]-(:Passage)`.
+  - Triggered when documentation sources make conflicting factual claims without version qualification.
+
+#### B. Cross-Version Dual-Scope Planning & Retrieval
+- **Dual Scope Extraction**:
+  - `extract_versions(query)` in `planner.py` parses comparative expressions (e.g. "Postgres 14 vs 16", "between 14 and 16") to identify both `target_version` (16) and `prior_version` (14).
+- **Retrieval Scope Partitioning**:
+  - `retriever.py` queries vector and BM25 indices across both scopes when a comparative intent is detected (`compare|vs\.?|versus|between`).
+  - Passages from both versions are merged into `state.passages`, guaranteeing that the Contradiction Analyst and Answer Writer receive grounded evidence from both versions without cross-contaminating single-version queries.
+
+#### C. Deterministic Diffing & LLM Hybrid Reasoning
+- **Deterministic Parameter Value Extractor**:
+  - Regex-based value extraction (`extract_parameter_values_from_passage`) isolates parameter names, types, default values, and allowed options from structured docs.
+  - Compares default values and option sets deterministically before or alongside LLM semantic evaluation.
+- **LLM Semantic Analyzer**:
+  - Uses structured JSON prompting via Gemini to classify relationship types (`SUPERSEDES`, `CONTRADICTS`, `NO_CONTRADICTION`) and generate human-readable technical explanations.
+- **Neo4j Graph Persistence**:
+  - When a relationship is confirmed, `record_passage_relationship` and `record_claim_relationship` write directed edges in Neo4j graph memory under discrete ACID transactions.
+
+---
+
+### 2. Empirical Verification & Test Results
+
+- **Unit & Integration Test Suite (`tests/test_contradiction.py`)**:
+  - `test_extract_parameter_values`: Verified deterministic parameter extraction for booleans, ints, and enums.
+  - `test_cross_version_changed_default_supersedes`: Verified that default value shifts (e.g., 20 $\rightarrow$ 0) generate `SUPERSEDES` edges.
+  - `test_cross_version_options_expansion_supersedes`: Verified that enum widening (e.g., adding `zstd` compression) generates `SUPERSEDES` edges.
+  - `test_direct_intra_version_contradiction`: Verified detection of contradictory statements within the same version.
+  - `test_break_it_on_purpose_identical_passages_no_contradiction`: Verified that identical passages across versions correctly evaluate to `NO_CONTRADICTION`.
+  - `test_contradiction_analyst_node_execution`: Verified LangGraph state update and audit trail logging.
+  - `test_neo4j_claim_and_passage_relationship_wiring`: Verified persistence and queryability of `SUPERSEDES` and `CONTRADICTS` relationships in Neo4j.
+  - **Result: 7/7 passed in 6.68s**.
+
+- **Comprehensive Regression Suite**:
+  - `uv run pytest tests/test_contradiction.py tests/test_ablation.py tests/test_cache_validator.py tests/failure/test_cache_traps.py tests/test_memory_cache_mcp.py -v`
+  - **Result: 41/41 passed in 18.48s (100% passing)**.
+
+- **Live CLI Verification 1 (Identical Parameter across Versions)**:
+  - Query: `"Compare vacuum_cost_limit in Postgres 14 vs 16"`
+  - Scope: Target = 16, Prior = 14
+  - Passages Retrieved: 7 (both PG14 and PG16 docs retrieved)
+  - Contradiction Analysis: `Detected: False`, `Relationship: NO_CONTRADICTION`
+  - Answer Output: *"In both PostgreSQL 14 and PostgreSQL 16, the parameter `vacuum_cost_limit` represents the accumulated cost that will cause the vacuuming process to sleep, and its default value is 200 [^pg16-..., ^pg14-...]."*
+  - Citations: Both PG16 and PG14 citations verified. L1 Passed.
+
+- **Live CLI Verification 2 (Superseded Parameter across Versions)**:
+  - Query: `"Compare wal_compression between Postgres 14 and 16"`
+  - Scope: Target = 16, Prior = 14
+  - Graph Wiring: Recorded `(:Passage {passage_id: 'pg16-runtime-config-wal-wal-compression'})-[:SUPERSEDES]->(:Passage {passage_id: 'pg14-runtime-config-wal-wal-compression'})` in Neo4j.
+  - Contradiction Analysis: `Detected: True`, `Relationship: SUPERSEDES`
+  - Reason: *"The wal_compression parameter evolved from a boolean type in PostgreSQL 14 to an enum type in PostgreSQL 16, allowing users to specify different compression methods (pglz, lz4, and zstd) instead of just on/off."*
+  - Answer Output: Accurately cited and explained PG14 boolean behavior and PG16 enum expansion with citations to both versions. L1 Passed.
+
+---
+
+### 3. Technical Explain-Back Questions & Interview Defense
+
+#### Q1: Why is distinguishing between `SUPERSEDES` and `CONTRADICTS` critical when reasoning across documentation versions?
+**Answer**:  
+Conflating version evolution with factual contradiction destroys trust and causes spurious abstentions. If a system classifies a change in a configuration default (e.g., PostgreSQL 16 changing `vacuum_cost_page_dirty` from 20 to 0) as a "contradiction," an automated verifier or safety guardrail would flag the documents as untrustworthy and refuse to answer. By formalizing a `SUPERSEDES` relationship, our system recognizes temporal progression: the PostgreSQL 16 specification intentionally supersedes the PostgreSQL 14 specification. This allows the Answer Writer to synthesize an informative comparative response citing both versions, rather than falsely rejecting valid technical evidence.
+
+#### Q2: How does the Contradiction Analyst avoid LLM hallucinations or false-positive conflicts when two passages describe the same parameter in identical terms?
+**Answer**:  
+We employ a defense-in-depth hybrid architecture combining deterministic normalization with grounded few-shot evaluation. Before triggering LLM semantic analysis, our deterministic engine (`analyze_cross_version_differences_deterministic`) parses key parameter attributes (type, default value, allowed values) using structured regular expressions. If all extracted values are identical, or if passage text similarity exceeds high thresholds without value conflicts, the system immediately tags the relationship as `NO_CONTRADICTION`. When LLM evaluation is invoked, it is strictly constrained by a Pydantic output schema and instructed that identical or non-conflicting statements must return `relationship_type: "NO_CONTRADICTION"` and `contradiction_detected: false`. This was verified by our Break It on Purpose test (`test_break_it_on_purpose_identical_passages_no_contradiction`), which proved zero false-positive contradiction flags on identical cross-version documentation chunks.
+
+#### Q3: If a user asks a comparative query spanning PostgreSQL 14 and PostgreSQL 16, how does the Retriever ensure that both versions are represented without breaking single-version precision?
+**Answer**:  
+Standard RAG retrievers filter strictly on a single active version scope, causing comparative queries like "Compare X in Postgres 14 vs 16" to retrieve only the newer version's chunk and hallucinate the older one. EvidenceFlow AI solves this at the Planner and Retriever layers: the Planner extracts both `target_version` and `prior_version` from multi-version queries. When comparative intent is detected (`compare|vs\.?|versus|between`), the Retriever partitions the retrieval pool, executing balanced sub-queries against both version payloads in Qdrant and BM25. The results are unified and presented to the Contradiction Analyst and Answer Writer with explicit version provenance tags, ensuring full grounded coverage of both versions while strictly preventing unversioned single-turn queries from leaking cross-version data.

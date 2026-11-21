@@ -144,7 +144,7 @@ def retriever_node(state: EvidenceFlowState, limit: Optional[int] = None) -> Dic
     is_comparative = bool(
         prior_version
         and str(prior_version) != str(target_version)
-        and re.search(r"\b(same|change|changed|did\s+it|is\s+it\s+still|difference|differ)\b", query, re.IGNORECASE)
+        and re.search(r"\b(same|change|changed|did\s+it|is\s+it\s+still|difference|differ|compare|vs\.?|versus|between)\b", query, re.IGNORECASE)
     )
     if is_comparative and prior_version in {"14", "15", "16"}:
         for subquery in plan:
@@ -277,11 +277,12 @@ def retriever_node(state: EvidenceFlowState, limit: Optional[int] = None) -> Dic
     exact_targets = [p for p in param_matches if "_" in p]
 
     # Fuse rankings across sub-queries using RRF with exact title boosting
+    effective_limit = (retrieval_limit + 2) if is_comparative else retrieval_limit
     top_passages = compute_reciprocal_rank_fusion(
         query_results,
         exact_targets=exact_targets,
         k=60,
-        limit=retrieval_limit,
+        limit=effective_limit,
     )
 
     audit_entry = {

@@ -1,10 +1,10 @@
 """
 workflow.py: EvidenceFlow LangGraph State Machine assembly and compilation.
-Wires START -> [optional memory_resolver] -> input_guardrail -> [optional cache_gatekeeper] -> planner -> retriever -> answer_writer -> verifier -> END
+Wires START -> [optional memory_resolver] -> input_guardrail -> [optional cache_gatekeeper] -> planner -> retriever -> contradiction_analyst -> answer_writer -> verifier -> END
 with conditional branching to cache_gatekeeper (bypassing planner/retriever/LLM on deterministic hit)
 and abstention_node for security, domain, ambiguity, and grounding failures.
 Integrates PostgreSQL checkpointer for process-restart survival, audit wrapper for immutable ledgers,
-Neo4j conversational memory graph, and 5-layer deterministic scoped cache.
+Neo4j conversational memory graph with claim supercedence/contradiction reasoning, and 5-layer deterministic scoped cache.
 """
 
 import argparse
@@ -20,6 +20,7 @@ from evidenceflow.guardrails.input_guardrail import input_guardrail_node
 from evidenceflow.graph.nodes import (
     planner_node,
     retriever_node,
+    contradiction_analyst_node,
     answer_writer_node,
     verifier_node,
     abstention_node,
@@ -78,10 +79,10 @@ def route_after_cache_gatekeeper(state: EvidenceFlowState) -> str:
 
 
 def route_after_retriever(state: EvidenceFlowState) -> str:
-    """Routes to abstention if retriever found no evidence or failed score/keyword threshold."""
+    """Routes to abstention if retriever found no evidence or failed score/keyword threshold; otherwise contradiction analyst."""
     if state.is_abstained:
         return "abstention"
-    return "answer_writer"
+    return "contradiction_analyst"
 
 
 def route_after_verifier(state: EvidenceFlowState) -> str:
@@ -100,7 +101,7 @@ def create_evidenceflow_graph(
     """
     Constructs and compiles the EvidenceFlow StateGraph with conditional abstention routes,
     optional transparent audit ledger wrappers, optional memory resolver, optional cache gatekeeper,
-    and optional persistent checkpointer.
+    contradiction analyst for cross-version reasoning, and optional persistent checkpointer.
     """
     builder = StateGraph(EvidenceFlowState)
 
@@ -113,6 +114,7 @@ def create_evidenceflow_graph(
             builder.add_node("cache_gatekeeper", audit_node_wrapper(cache_gatekeeper_node, "cache_gatekeeper"))
         builder.add_node("planner", audit_node_wrapper(planner_node, "planner"))
         builder.add_node("retriever", audit_node_wrapper(retriever_node, "retriever"))
+        builder.add_node("contradiction_analyst", audit_node_wrapper(contradiction_analyst_node, "contradiction_analyst"))
         builder.add_node("answer_writer", audit_node_wrapper(answer_writer_node, "answer_writer"))
         builder.add_node("verifier", audit_node_wrapper(verifier_node, "verifier"))
         builder.add_node("abstention", audit_node_wrapper(abstention_node, "abstention"))
@@ -124,6 +126,7 @@ def create_evidenceflow_graph(
             builder.add_node("cache_gatekeeper", cache_gatekeeper_node)
         builder.add_node("planner", planner_node)
         builder.add_node("retriever", retriever_node)
+        builder.add_node("contradiction_analyst", contradiction_analyst_node)
         builder.add_node("answer_writer", answer_writer_node)
         builder.add_node("verifier", verifier_node)
         builder.add_node("abstention", abstention_node)
@@ -161,8 +164,9 @@ def create_evidenceflow_graph(
     builder.add_conditional_edges(
         "retriever",
         route_after_retriever,
-        {"abstention": "abstention", "answer_writer": "answer_writer"},
+        {"abstention": "abstention", "contradiction_analyst": "contradiction_analyst"},
     )
+    builder.add_edge("contradiction_analyst", "answer_writer")
     builder.add_edge("answer_writer", "verifier")
     builder.add_conditional_edges(
         "verifier",
@@ -395,6 +399,12 @@ def main():
             print(f"    ({i}) [{p['chunk_id']}] (Score: {score_val:.4f})")
             print(f"        Section: {p.get('section')}")
 
+    print(f"\n[3.5] Contradiction Analysis:")
+    print(f"      Detected: {state.contradiction_detected}")
+    if state.contradiction_details:
+        print(f"      Relationship: {state.contradiction_details.get('relationship_type')}")
+        print(f"      Reason: {state.contradiction_details.get('reason')}")
+
     print(f"\n[4] Output Answer:\n{state.draft_answer}\n")
     print(f"[5] L1 Verification Result: {'PASSED' if state.l1_passed else 'FAILED'}")
     print(f"    Is Abstained: {state.is_abstained}")
@@ -413,7 +423,7 @@ def main():
 
     print(f"\n[7] Audit Trail Steps ({len(state.audit_trail)}):")
     for step in state.audit_trail:
-        print(f"    - Node: {step.get('node'):<16} Action: {step.get('action')}")
+        print(f"    - Node: {step.get('node'):<22} Action: {step.get('action')}")
     print(f"=======================================================\n")
 
 

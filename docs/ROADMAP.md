@@ -43,7 +43,8 @@ Every Day/Task strictly follows this 3-phase cadence:
 - [x] Day 13: Tier 2 Ablation study: Baseline vs. +Memory vs. +Cache vs. +Both (Non-inferiority analysis)
 
 ### Tier 3: Stand Out (Cross-Version Reasoning & Advanced Evaluation)
-- [ ] Contradiction Analyst agent with `SUPERSEDES` and `CONTRADICTS` graph edges
+
+- [x] Day 14: Contradiction Analyst agent with `SUPERSEDES` and `CONTRADICTS` graph edges
 - [ ] Independent L2 Judge for contested claims
 - [ ] Benchmark comparison: EvidenceFlow vs. pgvector + full-text vs. recursive SQL
 - [ ] External API FastMCP server with rate-limiting & schema validation
