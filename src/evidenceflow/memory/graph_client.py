@@ -608,15 +608,27 @@ def record_claim_relationship(
     meta = dict(metadata or {})
     try:
         with get_neo4j_session() as session:
-            session.run(
-                f"""
-                MATCH (c1:Claim {{id: $subject_id}})
-                MATCH (c2:Claim {{id: $target_id}})
-                MERGE (c1)-[r:{rel}]->(c2)
+            cypher = (
+                """
+                MATCH (c1:Claim {id: $subject_id})
+                MATCH (c2:Claim {id: $target_id})
+                MERGE (c1)-[r:SUPERSEDES]->(c2)
                 SET r.reason = $reason,
                     r.created_at = datetime(),
                     r += $meta
-                """,
+                """
+                if rel == "SUPERSEDES"
+                else """
+                MATCH (c1:Claim {id: $subject_id})
+                MATCH (c2:Claim {id: $target_id})
+                MERGE (c1)-[r:CONTRADICTS]->(c2)
+                SET r.reason = $reason,
+                    r.created_at = datetime(),
+                    r += $meta
+                """
+            )
+            session.run(
+                cypher,
                 {
                     "subject_id": subject_claim_id,
                     "target_id": target_claim_id,
@@ -685,15 +697,27 @@ def record_passage_relationship(
     meta = dict(metadata or {})
     try:
         with get_neo4j_session() as session:
-            session.run(
-                f"""
-                MERGE (p1:Passage {{passage_id: $subject_id}})
-                MERGE (p2:Passage {{passage_id: $target_id}})
-                MERGE (p1)-[r:{rel}]->(p2)
+            cypher = (
+                """
+                MERGE (p1:Passage {passage_id: $subject_id})
+                MERGE (p2:Passage {passage_id: $target_id})
+                MERGE (p1)-[r:SUPERSEDES]->(p2)
                 SET r.reason = $reason,
                     r.created_at = datetime(),
                     r += $meta
-                """,
+                """
+                if rel == "SUPERSEDES"
+                else """
+                MERGE (p1:Passage {passage_id: $subject_id})
+                MERGE (p2:Passage {passage_id: $target_id})
+                MERGE (p1)-[r:CONTRADICTS]->(p2)
+                SET r.reason = $reason,
+                    r.created_at = datetime(),
+                    r += $meta
+                """
+            )
+            session.run(
+                cypher,
                 {
                     "subject_id": subject_passage_id,
                     "target_id": target_passage_id,

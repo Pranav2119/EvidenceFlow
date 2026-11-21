@@ -347,11 +347,13 @@ def main():
     parser.add_argument("--groundedness-min", type=float, default=DEFAULT_MIN_GROUNDEDNESS, help="Minimum acceptable Groundedness (default: 0.95)")
     parser.add_argument("--recall-min", type=float, default=DEFAULT_MIN_RECALL_AT_5, help="Minimum acceptable Recall@5 (default: 0.85)")
     parser.add_argument("--max-cache-false-hits", type=float, default=DEFAULT_MAX_CACHE_FALSE_HITS, help="Maximum acceptable cache false-hit rate (default: 0.0)")
+    parser.add_argument("--abstention-min", type=float, default=DEFAULT_MIN_ABSTENTION_ACCURACY, help="Minimum acceptable abstention accuracy (default: 1.00)")
     parser.add_argument("--break-it", action="store_true", help="Break It on Purpose: Sets Groundedness threshold to 99.9% to verify regression rejection.")
     args = parser.parse_args()
 
     min_groundedness = args.groundedness_min
     min_recall = args.recall_min
+    min_abstention = args.abstention_min
     if args.break_it:
         logger.info("[Break It on Purpose Mode]: Artificially setting impossible Recall@5 threshold (99.9%) to prove CI regression failure...")
         min_recall = 0.999
@@ -360,6 +362,7 @@ def main():
         min_groundedness=min_groundedness,
         min_recall_at_5=min_recall,
         max_cache_false_hits=args.max_cache_false_hits,
+        min_abstention_accuracy=min_abstention,
     )
 
     print_ci_report(report)

@@ -53,35 +53,39 @@ def _find_parameter_chunk(setting: str, version: str) -> Optional[Dict[str, Any]
     Locates the documentation chunk in Qdrant that defines a specific setting in a version.
     Prioritizes runtime-config parameter chunks over release note mentions.
     """
-    client = get_evidence_qdrant_client()
-    clean_setting = setting.strip().lower()
-    clean_param_id = clean_setting.replace("_", "-")
+    try:
+        client = get_evidence_qdrant_client()
+        clean_setting = setting.strip().lower()
+        clean_param_id = clean_setting.replace("_", "-")
 
-    # 1. Search candidate chunks in Qdrant scoped to version
-    candidates = client.search(query=clean_setting, version=version, limit=5)
-    if not candidates:
-        return None
+        # 1. Search candidate chunks in Qdrant scoped to version
+        candidates = client.search(query=clean_setting, version=version, limit=5)
+        if not candidates:
+            return None
 
-    # Priority 1: Direct runtime-config chunk with setting name in chunk_id
-    for h in candidates:
-        cid = h.get("chunk_id", "").lower()
-        if "runtime-config" in cid and clean_param_id in cid:
-            return h
-
-    # Priority 2: Chunk title or parameter header directly names the setting
-    for h in candidates:
-        title = h.get("title", "").lower()
-        content = h.get("content", "").lower()
-        if clean_setting in title or f"parameter: {clean_setting}" in content:
-            if "release" not in h.get("doc_name", "").lower():
+        # Priority 1: Direct runtime-config chunk with setting name in chunk_id
+        for h in candidates:
+            cid = h.get("chunk_id", "").lower()
+            if "runtime-config" in cid and clean_param_id in cid:
                 return h
 
-    # Priority 3: Fall back to best candidate if it contains the parameter name in ID
-    for h in candidates:
-        if clean_param_id in h.get("chunk_id", "").lower():
-            return h
+        # Priority 2: Chunk title or parameter header directly names the setting
+        for h in candidates:
+            title = h.get("title", "").lower()
+            content = h.get("content", "").lower()
+            if clean_setting in title or f"parameter: {clean_setting}" in content:
+                if "release" not in h.get("doc_name", "").lower():
+                    return h
 
-    return None
+        # Priority 3: Fall back to best candidate if it contains the parameter name in ID
+        for h in candidates:
+            if clean_param_id in h.get("chunk_id", "").lower():
+                return h
+
+        return None
+    except Exception as e:
+        logger.error("_find_parameter_chunk failed for setting='%s' version='%s': %s", setting, version, e)
+        return None
 
 
 @mcp.tool()
@@ -259,6 +263,11 @@ def diff_sections(
         return {
             "status": "error",
             "error": f"Invalid version pair ('{v1}', '{v2}'). Supported versions: {sorted(list(VALID_VERSIONS))}.",
+        }
+    if v1_str == v2_str:
+        return {
+            "status": "error",
+            "error": f"v1 and v2 must be different versions. Both are '{v1_str}'.",
         }
 
     chunk_1 = _find_parameter_chunk(setting_clean, v1_str)

@@ -60,16 +60,20 @@ class TokenBucketRateLimiter:
         Attempts to acquire tokens within the specified timeout.
         Returns True if acquired; False if timed out (rate limit exceeded).
         """
-        start = time.monotonic()
-        while time.monotonic() - start < timeout:
+        deadline = time.monotonic() + timeout
+        while True:
             async with self._lock:
                 self._refill()
                 if self.tokens >= tokens:
                     self.tokens -= tokens
                     return True
-            # Sleep briefly before retrying token acquisition
-            await asyncio.sleep(0.05)
-        return False
+                deficit = tokens - self.tokens
+                wait_time = deficit / self.rate
+
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+            await asyncio.sleep(min(wait_time, remaining, 0.05))
 
 
 # Global rate limiter instance (5 req/sec, burst 10)
@@ -330,7 +334,7 @@ async def get_security_advisories(
 
     async def _fetch():
         if simulate_outage:
-            raise httpx.HTTPStatusError("503 Service Unavailable", request=None, response=httpx.Response(503))
+            raise httpx.ConnectError("Simulated external API outage / connection refused for security advisories.")
         if timeout_override and timeout_override <= 0.005:
             raise httpx.TimeoutException("Request timed out.")
 

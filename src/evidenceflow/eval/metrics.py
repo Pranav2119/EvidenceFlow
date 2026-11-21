@@ -145,23 +145,26 @@ def calculate_citation_recall(
     if not markers:
         return 0.0
 
-    # Answer has valid citations backing its assertions
-    return 1.0
+    # Split into sentences; compute fraction of sentences with at least one citation marker
+    sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", draft_answer.strip()) if s.strip()]
+    if not sentences:
+        return 0.0
+    cited_count = sum(1 for s in sentences if re.search(r"\[\^[^\]]+\]", s))
+    return min(1.0, cited_count / len(sentences))
 
 
 NUMBER_WORD_MAP = {
-    "0": "zero",
-    "zero": "0",
-    "1": "one",
-    "one": "1",
-    "2": "two",
-    "two": "2",
-    "3": "three",
-    "three": "3",
-    "4": "four",
-    "four": "4",
-    "5": "five",
-    "five": "5",
+    "0": "zero", "zero": "0",
+    "1": "one", "one": "1",
+    "2": "two", "two": "2",
+    "3": "three", "three": "3",
+    "4": "four", "four": "4",
+    "5": "five", "five": "5",
+    "6": "six", "six": "6",
+    "7": "seven", "seven": "7",
+    "8": "eight", "eight": "8",
+    "9": "nine", "nine": "9",
+    "10": "ten", "ten": "10",
 }
 
 

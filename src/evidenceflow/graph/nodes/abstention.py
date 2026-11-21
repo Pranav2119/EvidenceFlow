@@ -84,7 +84,7 @@ def abstention_node(state: EvidenceFlowState) -> Dict[str, Any]:
         "draft_answer": formatted_answer,
         "citations": [],
         "is_abstained": True,
-        "l1_passed": True,  # Abstention is safe, compliant termination
+        "l1_passed": False,  # Abstention represents non-entailed termination
         "abstention_code": code,
         "abstention_reason": reason,
         "audit_trail": existing_audit + [audit_entry],

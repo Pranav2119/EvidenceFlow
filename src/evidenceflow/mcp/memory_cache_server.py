@@ -122,10 +122,15 @@ def require_role(allowed_roles: Set[str], operation: str):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             t0 = time.perf_counter()
-            caller_role = kwargs.get("caller_role")
-            if not caller_role and len(args) >= 1:
-                # Inspect kwargs or fallback
-                pass
+            import inspect
+            caller_role = None
+            try:
+                sig = inspect.signature(func)
+                bound = sig.bind(*args, **kwargs)
+                bound.apply_defaults()
+                caller_role = bound.arguments.get("caller_role")
+            except Exception:
+                caller_role = kwargs.get("caller_role")
 
             role_str = (caller_role or "").strip().lower()
             if role_str not in allowed_roles:
