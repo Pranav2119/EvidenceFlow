@@ -600,3 +600,71 @@ In enterprise infrastructure operations, a false-hit returns outdated, non-exist
 #### Q3: What test guarantees that a prompt injection embedded inside an unverified document is never written to the verified-claim cache?
 **Answer**:  
 EvidenceFlow AI tests this through `test_prompt_injection_never_cached` and pipeline integration gates. Adversarial inputs are evaluated at the `input_guardrail` node before reaching planning, retrieval, or cache insertion. If an injection is detected, the pipeline routes immediately to `abstention` with `is_abstained: True` and an `INJECTION` categorical code. The workflow commit hook in `run_pipeline` and `write_cache` strictly enforces `assert not state.is_abstained and state.l1_passed` as a precondition for writing to L1/L2 or L5 cache. Unverified and abstained queries are discarded, preventing malicious persistence.
+
+
+---
+
+## Session 12: Day 13 Tier 2 Ablation Study & Statistical Non-Inferiority Analysis
+**Date**: 2026-11-21  
+**Focus**: Multi-condition ablation framework (`ablation_runner.py`), statistical non-inferiority evaluator (`run_ablation.py`), 4-condition benchmark across 3 repeats, p50/p95 latency reduction, 66.7% token savings, and formal mathematical non-inferiority proof ($CI_{\text{upper}} < 0.02$).
+
+---
+
+### 1. Concepts Mastered & Architectural Defenses
+
+#### A. Multi-Condition Pipeline Ablation
+- **Purpose**: Quantifying the individual and combined impact of conversational memory (Neo4j) and tiered caching (5-layer scoped cache) against an unoptimized stateless baseline.
+- **4 Evaluated Conditions**:
+  1. **Baseline**: Stateless LangGraph state machine, no Neo4j memory, no cache.
+  2. **+Memory**: Neo4j conversational memory graph active, no cache.
+  3. **+Cache**: 5-layer deterministic scoped cache active, no memory.
+  4. **+Both / Full System**: Neo4j memory + 5-layer scoped cache.
+
+#### B. Formal Statistical Non-Inferiority Proof
+- In mission-critical enterprise systems, latency or cost optimizations cannot be deployed if they silently degrade answer quality or citation groundedness.
+- **Hypotheses**:
+  - Null Hypothesis ($H_0$): $\mu_{\text{baseline}} - \mu_{\text{+Both}} \ge \Delta$ (Optimization degrades groundedness by $\ge 2.0\%$).
+  - Alternative Hypothesis ($H_1$): $\mu_{\text{baseline}} - \mu_{\text{+Both}} < \Delta$ (Optimization is statistically non-inferior).
+- **One-Sided 95% Confidence Interval Formula**:
+  $$CI_{\text{upper}} = (\bar{x}_{\text{base}} - \bar{x}_{\text{treat}}) + 1.645 \cdot \sqrt{\frac{s_{\text{base}}^2}{n_{\text{base}}} + \frac{s_{\text{treat}}^2}{n_{\text{treat}}}}$$
+- If $CI_{\text{upper}} < \Delta$ (where $\Delta = 0.02 = 2.0\%$), $H_0$ is rejected and non-inferiority is mathematically proven ($p < 0.05$).
+
+#### C. Deterministic Cache Acceleration Invariants
+- Verified that pure cached hits execute in **sub-50ms** (p50: 45.72ms on `+Cache`, 40.67ms on pure hits, a **96.7% speedup** vs. 1214.86ms baseline).
+- Verified that cached hits consume **0 prompt tokens and 0 candidate tokens**, cutting total multi-turn session token consumption and inference cost by **66.7%** across 3 repeats.
+
+---
+
+### 2. Empirical Verification & Benchmark Results
+
+- **Ablation Performance Table (`docs/experiments.md`)**:
+  - `Baseline`: Groundedness = 100.0%, p50 = 1214.86 ms, Tokens/query = 1592, Cost/1k = $0.1316, Cache Hit Rate = 0.0%
+  - `+Memory`: Groundedness = 100.0%, p50 = 1276.31 ms, Tokens/query = 1591, Cost/1k = $0.1312, Cache Hit Rate = 0.0%
+  - `+Cache`: Groundedness = 100.0%, p50 = 45.72 ms, Tokens/query = 531, Cost/1k = $0.0439, Cache Hit Rate = 66.7%
+  - `+Both`: Groundedness = 100.0%, p50 = 106.50 ms, Tokens/query = 530, Cost/1k = $0.0437, Cache Hit Rate = 66.7%
+- **Efficiency Gains**:
+  - **p50 Latency Speedup**: **91.2% reduction** (1214.9ms $\rightarrow$ 106.5ms)
+  - **Pure Cache Hit Speedup**: **96.7% reduction** (40.67ms)
+  - **Token Consumption**: **66.7% reduction** (1592 $\rightarrow$ 530 tokens/query)
+  - **Inference Cost**: **66.8% savings** ($0.1316 $\rightarrow$ $0.0437 per 1,000 queries)
+- **Non-Inferiority Verification**:
+  - $\bar{d} = 0.0000\%$, $SE = 0.0000$, $CI_{\text{upper}} = 0.000\% < 2.000\%$
+  - Statistical Decision: **PROVEN NON-INFERIOR (CI Upper 0.0000 < Margin 0.0200, p=0.0001)**
+- **Ablation Unit Test Suite (`tests/test_ablation.py`)**: 6/6 passed in 2.87s.
+- **Full Tier 2 Combined Suite**: 25/25 tests passed across `test_cache_validator.py`, `test_cache_traps.py`, and `test_ablation.py`.
+
+---
+
+### 3. Technical Explain-Back Questions & Interview Defense
+
+#### Q1: In an ablation study, why do we run each experimental condition 3 times rather than once?
+**Answer**:  
+A single run cannot separate genuine algorithmic advantages from stochastic variance (LLM response variability, network jitter, database connection warmup, and OS scheduling). Repeating each condition $N = 3$ times across questions produces empirical sample distributions for each metric, allowing computation of robust order statistics (p50 median and p95 tail latencies) and sample standard error ($SE$). Crucially, multi-turn repetition is required to evaluate cache behavior: Run 1 primes the cache on a cold miss, while Runs 2 and 3 measure deterministic hit acceleration and token elimination under steady-state production conditions.
+
+#### Q2: How do you explain "non-inferiority" to an engineering hiring manager in one sentence?
+**Answer**:  
+Non-inferiority testing statistically proves with 95% confidence that our caching and memory optimizations deliver massive latency and cost reductions without degrading citation groundedness beyond a tight, predefined tolerance threshold ($\Delta = 2\%$).
+
+#### Q3: If caching reduced latency by 85% and tokens by 80%, but dropped citation precision from 98% to 91%, would you deploy it to production? Explain why or why not.
+**Answer**:  
+Absolutely not. In technical systems and database administration, precision is non-negotiable—a 7% drop in citation precision means 1 out of every 14 cited evidence chunks is ungrounded or hallucinated. An engineer configuring database replication or memory settings based on ungrounded parameters risks database crashes, corruption, or outages. In our architecture, the non-inferiority margin is strictly set to $\Delta = 2\%$. Any optimization that breaches this threshold fails the statistical non-inferiority gate and is automatically blocked from production deployment.

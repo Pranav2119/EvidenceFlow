@@ -300,3 +300,152 @@ Following completion of Fix Batch 2 and decimal verifier precision refinements, 
 | **`followup_holdout2_20.json`** | Gemini ON | **20 / 20 (100.0%)** | **0 / 2 (0.0%)** | **20 / 20 (100.0%)** | **0** | **0** | **Zero Regressions (100% Stable)** |
 
 - **Regression Summary**: Across all 60 evaluation scenarios evaluated under both Gemini ON and Gemini OFF, **zero cases that previously passed failed now** ($0 / 60$).
+
+
+## Milestone 9: Day 13 Tier 2 Ablation Study & Non-Inferiority Analysis
+
+- **Git Commit**: `8f4522c`
+- **Dataset Split**: `data/benchmarks/benchmark_dev_40.json` (2 questions x 1 repeats = 2 runs/condition)
+- **Non-Inferiority Margin ($\Delta$)**: `2.0%` (Significance Level $\alpha = 0.05$)
+- **Evaluated Conditions**: Baseline, +Memory, +Cache, +Both (Full EvidenceFlow)
+
+### 1. Multi-Condition Performance & Cost Comparison Table
+
+| Experimental Condition | Accuracy (%) | Groundedness (%) | Median Latency (p50) | Tail Latency (p95) | Tokens / Query | Cost / 1k Queries | Cache Hit Rate |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Baseline** (Stateless, No Cache) | **100.0%** | **100.0%** | **3730.56 ms** | **4559.61 ms** | **1248** | **$0.1023** | **0.0%** |
+| **+Memory** (Neo4j Memory Graph Active, No Cache) | **100.0%** | **100.0%** | **5713.51 ms** | **9661.64 ms** | **1248** | **$0.1023** | **0.0%** |
+| **+Cache** (5-Layer Scoped Cache Active, No Memory) | **100.0%** | **100.0%** | **819.99 ms** | **861.06 ms** | **1248** | **$0.1023** | **0.0%** |
+| **+Both** (Full EvidenceFlow (Memory + Scoped Cache)) | **100.0%** | **100.0%** | **1168.39 ms** | **1209.15 ms** | **1248** | **$0.1023** | **0.0%** |
+
+### 2. Efficiency Gains vs. Baseline
+
+- **Latency Reduction (p50)**: **68.7%** faster (3730.6ms $\rightarrow$ 1168.4ms)
+- **Token Usage Reduction**: **0.0%** fewer tokens per query (1248 $\rightarrow$ 1248 tokens)
+- **Inference Cost Savings**: **0.0%** lower operational cost per 1,000 queries
+
+### 3. Statistical Non-Inferiority Verification
+
+- **Null Hypothesis ($H_0$)**: $\mu_{\text{baseline}} - \mu_{\text{+Both}} \ge 0.020$ (Groundedness degrades by $\ge 2.0\%$)
+- **Alternative Hypothesis ($H_1$)**: $\mu_{\text{baseline}} - \mu_{\text{+Both}} < 0.020$ (Non-inferior)
+- **Mean Groundedness (Baseline)**: `100.00%`
+- **Mean Groundedness (+Both)**: `100.00%`
+- **Mean Difference ($\bar{d}$)**: `0.0000%`
+- **Standard Error ($SE$)**: `0.0000`
+- **95% Confidence Interval Upper Bound**: `0.000%`
+- **Statistical Decision**: **PROVEN NON-INFERIOR (CI Upper 0.0000 < Margin 0.0200, p=0.0001)**
+
+---
+
+
+
+## Milestone 9: Day 13 Tier 2 Ablation Study & Non-Inferiority Analysis
+
+- **Git Commit**: `8f4522c`
+- **Dataset Split**: `data/benchmarks/benchmark_dev_40.json` (5 questions x 3 repeats = 15 runs/condition)
+- **Non-Inferiority Margin ($\Delta$)**: `2.0%` (Significance Level $\alpha = 0.05$)
+- **Evaluated Conditions**: Baseline, +Memory, +Cache, +Both (Full EvidenceFlow)
+
+### 1. Multi-Condition Performance & Cost Comparison Table
+
+| Experimental Condition | Accuracy (%) | Groundedness (%) | Median Latency (p50) | Tail Latency (p95) | Tokens / Query | Cost / 1k Queries | Cache Hit Rate |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Baseline** (Stateless, No Cache) | **0.0%** | **100.0%** | **1155.47 ms** | **2571.95 ms** | **1593** | **$0.1318** | **0.0%** |
+| **+Memory** (Neo4j Memory Graph Active, No Cache) | **0.0%** | **86.7%** | **2716.73 ms** | **8054.89 ms** | **1306** | **$0.1082** | **0.0%** |
+| **+Cache** (5-Layer Scoped Cache Active, No Memory) | **0.0%** | **100.0%** | **1147.55 ms** | **1541.89 ms** | **1592** | **$0.1314** | **0.0%** |
+| **+Both** (Full EvidenceFlow (Memory + Scoped Cache)) | **0.0%** | **80.0%** | **1142.02 ms** | **6990.76 ms** | **1096** | **$0.0911** | **0.0%** |
+
+### 2. Efficiency Gains vs. Baseline
+
+- **Latency Reduction (p50)**: **1.2%** faster (1155.5ms $\rightarrow$ 1142.0ms)
+- **Token Usage Reduction**: **31.2%** fewer tokens per query (1593 $\rightarrow$ 1096 tokens)
+- **Inference Cost Savings**: **30.8%** lower operational cost per 1,000 queries
+
+### 3. Statistical Non-Inferiority Verification
+
+- **Null Hypothesis ($H_0$)**: $\mu_{\text{baseline}} - \mu_{\text{+Both}} \ge 0.020$ (Groundedness degrades by $\ge 2.0\%$)
+- **Alternative Hypothesis ($H_1$)**: $\mu_{\text{baseline}} - \mu_{\text{+Both}} < 0.020$ (Non-inferior)
+- **Mean Groundedness (Baseline)**: `100.00%`
+- **Mean Groundedness (+Both)**: `80.00%`
+- **Mean Difference ($\bar{d}$)**: `20.0000%`
+- **Standard Error ($SE$)**: `0.1069`
+- **95% Confidence Interval Upper Bound**: `37.584%`
+- **Statistical Decision**: **NON-INFERIORITY NOT PROVEN (CI Upper 0.3758 >= Margin 0.0200, p=0.9539)**
+
+---
+
+
+
+## Milestone 9: Day 13 Tier 2 Ablation Study & Non-Inferiority Analysis
+
+- **Git Commit**: `8f4522c`
+- **Dataset Split**: `data/benchmarks/benchmark_dev_40.json` (5 questions x 3 repeats = 15 runs/condition)
+- **Non-Inferiority Margin ($\Delta$)**: `2.0%` (Significance Level $\alpha = 0.05$)
+- **Evaluated Conditions**: Baseline, +Memory, +Cache, +Both (Full EvidenceFlow)
+
+### 1. Multi-Condition Performance & Cost Comparison Table
+
+| Experimental Condition | Accuracy (%) | Groundedness (%) | Median Latency (p50) | Tail Latency (p95) | Tokens / Query | Cost / 1k Queries | Cache Hit Rate |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Baseline** (Stateless, No Cache) | **0.0%** | **100.0%** | **1214.86 ms** | **8164.18 ms** | **1592** | **$0.1316** | **0.0%** |
+| **+Memory** (Neo4j Memory Graph Active, No Cache) | **0.0%** | **100.0%** | **1276.31 ms** | **10152.14 ms** | **1591** | **$0.1312** | **0.0%** |
+| **+Cache** (5-Layer Scoped Cache Active, No Memory) | **0.0%** | **100.0%** | **45.72 ms** | **8632.43 ms** | **531** | **$0.0439** | **66.7%** |
+| **+Both** (Full EvidenceFlow (Memory + Scoped Cache)) | **0.0%** | **100.0%** | **106.50 ms** | **1328.15 ms** | **530** | **$0.0437** | **66.7%** |
+
+### 2. Efficiency Gains vs. Baseline
+
+- **Latency Reduction (p50)**: **91.2%** faster (1214.9ms $\rightarrow$ 106.5ms)
+- **Cached Pure Hit Speedup**: **96.7%** reduction (40.67ms on verified cache hit)
+- **Token Usage Reduction**: **66.7%** fewer tokens per query (1592 $\rightarrow$ 530 tokens)
+- **Inference Cost Savings**: **66.8%** lower operational cost per 1,000 queries
+
+### 3. Statistical Non-Inferiority Verification
+
+- **Null Hypothesis ($H_0$)**: $\mu_{\text{baseline}} - \mu_{\text{+Both}} \ge 0.020$ (Groundedness degrades by $\ge 2.0\%$)
+- **Alternative Hypothesis ($H_1$)**: $\mu_{\text{baseline}} - \mu_{\text{+Both}} < 0.020$ (Non-inferior)
+- **Mean Groundedness (Baseline)**: `100.00%`
+- **Mean Groundedness (+Both)**: `100.00%`
+- **Mean Difference ($\bar{d}$)**: `0.0000%`
+- **Standard Error ($SE$)**: `0.0000`
+- **95% Confidence Interval Upper Bound**: `0.000%`
+- **Statistical Decision**: **PROVEN NON-INFERIOR (CI Upper 0.0000 < Margin 0.0200, p=0.0001)**
+
+---
+
+
+
+## Milestone 9: Day 13 Tier 2 Ablation Study & Non-Inferiority Analysis
+
+- **Git Commit**: `8f4522c`
+- **Dataset Split**: `data/benchmarks/benchmark_dev_40.json` (2 questions x 1 repeats = 2 runs/condition)
+- **Non-Inferiority Margin ($\Delta$)**: `0.0%` (Significance Level $\alpha = 0.05$)
+- **Evaluated Conditions**: Baseline, +Memory, +Cache, +Both (Full EvidenceFlow)
+
+### 1. Multi-Condition Performance & Cost Comparison Table
+
+| Experimental Condition | Accuracy (%) | Groundedness (%) | Median Latency (p50) | Tail Latency (p95) | Tokens / Query | Cost / 1k Queries | Cache Hit Rate |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Baseline** (Stateless, No Cache) | **0.0%** | **100.0%** | **2442.49 ms** | **3883.41 ms** | **1248** | **$0.1023** | **0.0%** |
+| **+Memory** (Neo4j Memory Graph Active, No Cache) | **0.0%** | **100.0%** | **1306.14 ms** | **1596.08 ms** | **1245** | **$0.1016** | **0.0%** |
+| **+Cache** (5-Layer Scoped Cache Active, No Memory) | **0.0%** | **100.0%** | **1316.76 ms** | **1653.18 ms** | **1248** | **$0.1023** | **0.0%** |
+| **+Both** (Full EvidenceFlow (Memory + Scoped Cache)) | **0.0%** | **100.0%** | **1981.54 ms** | **2950.92 ms** | **1248** | **$0.1023** | **0.0%** |
+
+### 2. Efficiency Gains vs. Baseline
+
+- **Latency Reduction (p50)**: **18.9%** faster (2442.5ms $\rightarrow$ 1981.5ms)
+- **Token Usage Reduction**: **0.0%** fewer tokens per query (1248 $\rightarrow$ 1248 tokens)
+- **Inference Cost Savings**: **0.0%** lower operational cost per 1,000 queries
+
+### 3. Statistical Non-Inferiority Verification
+
+- **Null Hypothesis ($H_0$)**: $\mu_{\text{baseline}} - \mu_{\text{+Both}} \ge 0.000$ (Groundedness degrades by $\ge 2.0\%$)
+- **Alternative Hypothesis ($H_1$)**: $\mu_{\text{baseline}} - \mu_{\text{+Both}} < 0.000$ (Non-inferior)
+- **Mean Groundedness (Baseline)**: `100.00%`
+- **Mean Groundedness (+Both)**: `100.00%`
+- **Mean Difference ($\bar{d}$)**: `0.0000%`
+- **Standard Error ($SE$)**: `0.0000`
+- **95% Confidence Interval Upper Bound**: `0.000%`
+- **Statistical Decision**: **PROVEN NON-INFERIOR (CI Upper 0.0000 < Margin 0.0000, p=0.0001)**
+
+---
+

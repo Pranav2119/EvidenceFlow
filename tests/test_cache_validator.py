@@ -246,17 +246,22 @@ def test_cache_gatekeeper_node_stale_rejection():
     assert audit["status"] == "evicted"
 
 
+@patch("evidenceflow.graph.nodes.retriever.get_bm25_index")
 @patch("evidenceflow.graph.workflow.pg_record_turn")
 @patch("evidenceflow.graph.audit_wrapper.get_next_step_number", return_value=1)
 @patch("evidenceflow.graph.audit_wrapper.record_claim")
 @patch("evidenceflow.graph.audit_wrapper.record_step")
 @patch("evidenceflow.graph.nodes.retriever.get_evidence_qdrant_client")
-def test_end_to_end_workflow_two_turn_cache_acceleration(mock_qdrant, mock_record_step, mock_record_claim, mock_get_next_step, mock_pg_turn):
+def test_end_to_end_workflow_two_turn_cache_acceleration(mock_qdrant, mock_record_step, mock_record_claim, mock_get_next_step, mock_pg_turn, mock_bm25):
     """
     Two-run test:
       Run 1: Cache Miss -> full pipeline execution -> verifier passes -> cached.
       Run 2: Cache Hit -> Gatekeeper intercepts -> instant answer, cache_hit: True, 0 tokens.
     """
+    mock_bm = MagicMock()
+    mock_bm.search.return_value = []
+    mock_bm25.return_value = mock_bm
+
     cm = ScopedCacheManager()
     db = InMemoryCorpusDatabase({
         "pg16_doc_test": "valid_sha256_mock_hash",
@@ -307,18 +312,23 @@ def test_end_to_end_workflow_two_turn_cache_acceleration(mock_qdrant, mock_recor
     assert hit_latency_ms < 50.0  # Instant execution without LLM calls
 
 
+@patch("evidenceflow.graph.nodes.retriever.get_bm25_index")
 @patch("evidenceflow.graph.workflow.pg_record_turn")
 @patch("evidenceflow.graph.audit_wrapper.get_next_step_number", return_value=1)
 @patch("evidenceflow.graph.audit_wrapper.record_claim")
 @patch("evidenceflow.graph.audit_wrapper.record_step")
 @patch("evidenceflow.graph.nodes.retriever.get_evidence_qdrant_client")
-def test_break_it_on_purpose_tampered_hash_eviction(mock_qdrant, mock_record_step, mock_record_claim, mock_get_next_step, mock_pg_turn):
+def test_break_it_on_purpose_tampered_hash_eviction(mock_qdrant, mock_record_step, mock_record_claim, mock_get_next_step, mock_pg_turn, mock_bm25):
     """
     Break It on Purpose (Roadmap Day 10 Section 6):
     Simulate a documentation patch: artificially change a single character in the source
     chunk's stored SHA-256 hash. Run query again and verify that CacheGatekeeper identifies
     hash mismatch, rejects cache entry, evicts it, and falls back to fresh retrieval.
     """
+    mock_bm = MagicMock()
+    mock_bm.search.return_value = []
+    mock_bm25.return_value = mock_bm
+
     cm = ScopedCacheManager()
     original_hash = "235279b3f1c8d212ae254216b3f468260ceb0ff6ca7dd99698c36a1e8d3ab5c7"
     db = InMemoryCorpusDatabase({

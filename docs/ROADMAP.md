@@ -40,7 +40,7 @@ Every Day/Task strictly follows this 3-phase cadence:
 - [x] Day 10: Zero-LLM deterministic cache hit validator & automatic stale-chunk eviction
 - [x] Day 11: FastMCP `memory-cache-mcp` server with role-based write isolation
 - [x] Day 12: Cache collision trap tests & document patch staleness tests
-- [ ] Day 13: Tier 2 Ablation study: Baseline vs. +Memory vs. +Cache vs. +Both (Non-inferiority analysis)
+- [x] Day 13: Tier 2 Ablation study: Baseline vs. +Memory vs. +Cache vs. +Both (Non-inferiority analysis)
 
 ### Tier 3: Stand Out (Cross-Version Reasoning & Advanced Evaluation)
 - [ ] Contradiction Analyst agent with `SUPERSEDES` and `CONTRADICTS` graph edges
