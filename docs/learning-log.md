@@ -1163,3 +1163,14 @@ Calling proprietary LLMs inside CI builds introduces cost, rate-limiting, and ne
 - Explain why an answer/refusal decision can be correct while the answer's numeric value is wrong.
 - Explain why adding many quick refusals could lower the overall median latency without making retrieval faster.
 - No local application/database services were started. CI owns and stops its disposable containers; original development volumes are untouched.
+
+### Real Capture Follow-up
+- [CI run 45217948535](https://github.com/Pranav2119/EvidenceFlow/actions/runs/45217948535) at `b84c649` completed the first real baseline, uploaded the artifact, and passed **281 tests** plus all configured metric gates. This supersedes the pending-capture note above.
+- Retained the original [JSON](../data/benchmarks/baseline_dev_ci_45217948535.json) after checking its archive digest, commit, configuration, 40 unique cases, 120 timed observations, zero observed cache hits, and aggregate consistency. No historical results were overwritten.
+- Against current labels: 36/40 answer/refusal decisions agreed, all 14 expected-refusal cases were refused, and 22/26 expected values appeared in accepted answers. All labeled support passages were retrieved within the first five results. Median/P95 over all timed calls were 43.9/100.1 ms; these include refusals and are not production latency guarantees.
+- `d01` and `d02` expected `vacuum_cost_limit=200`. The correct passage was ranked second, while the rejection named `autovacuum_vacuum_cost_limit=-1`. Investigate selection/binding before deciding which component to change.
+- A benchmark can be wrong: `d22` and `d25` expect default `off`, but their assigned gold passages do not state that default. Keep the four refusals labeled as dataset-flagged, not four proven application defects. Do not force unsupported answers merely to increase the score.
+- The artifact retains the state returned after the pipeline, including refusal notices; it is not an export of every intermediate writer/verifier state.
+- No returned draft text, ordered retrieval IDs, or refusal decisions changed across the three timed repeats. Repetition of the same questions is still not independent statistical evidence.
+- Existing Qdrant compatibility and pool-shutdown warnings remain. Source, prompts, corpus, cache/memory behavior, and original dataset labels were not changed after observing this baseline.
+- Rewrite in my own words: why 100% retrieval recall can coexist with refusals, why label/evidence support must be audited, and why changing labels must not masquerade as an application improvement.

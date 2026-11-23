@@ -4,6 +4,57 @@ This document tracks all empirical evaluation runs, benchmark datasets, ablation
 
 > **Validity notice:** Historical entries below are preserved as records, not re-certified results. Review found cache-contaminated baseline calls, incorrect value scoring, and unsupported non-inferiority success claims. Do not use those historical comparisons as current resume evidence until the affected runs and methods have been revalidated.
 
+## Baseline DEV-CI-45217948535 (2026-11-23)
+
+**Status: captured and internally validated; diagnostic results against current labels, not factual-quality certification.** Two inspected gold passages do not substantiate their expected defaults. The dataset was not relabeled, and the scores below were not adjusted to hide this limitation.
+
+### Provenance and Controls
+- **Code commit:** `b84c6492170c55b44cb2edf9f0fa300ea1575a6a`.
+- **CI:** [run 45217948535](https://github.com/Pranav2119/EvidenceFlow/actions/runs/45217948535), attempt 1; baseline capture, artifact upload, 281 tests, and all configured metric gates passed. One pytest compatibility warning remains.
+- **Artifact:** `dev-baseline-45217948535-1`, ID `14838444548`. Its ZIP SHA-256 matched GitHub's recorded digest: `d83954fcdc050fbe9543fd6b45bc8f70eeb1e8baa3327ecf95ba77cde9d6b3cc`.
+- **Retained result:** [baseline_dev_ci_45217948535.json](../data/benchmarks/baseline_dev_ci_45217948535.json), copied unchanged from the artifact. Downloaded JSON: 197,776 bytes; SHA-256 (original LF bytes) `fb5628b72d8031e93b630d9963d12b5830d8b76a78aaf175e45362a8d920bd78`.
+- **Environment:** hosted Linux `7.0.0-1020-azure (x86_64)`; FastEmbed; fresh CI databases. Gemini, conversational memory, the scoped answer cache, and checkpointing were off.
+- **Sampling:** 40 unique development questions, 26 labeled answerable and 14 labeled for refusal. Each had one discarded warm-up and three timed executions: 40 warm-ups plus 120 timed observations. Capture occurred before tests could alter database contents. The frozen split was not opened or executed.
+- **Integrity checks:** commit/configuration identity, original question IDs/text/versions, three observations per case, finite nonnegative durations, no observed cache hits, JSON serialization, and aggregate decision/value counts were checked against the actual artifact.
+
+### Observed Results
+
+| Metric | Observed value | Interpretation |
+| :--- | :--- | :--- |
+| Answer/refusal decision accuracy | 36/40 = 90.00% | Agreement with current labels, not factual answer correctness |
+| Dataset-flagged wrong refusals | 4/26 = 15.38% | Includes two gold-passage support gaps discussed below |
+| Unexpected answers on refusal cases | 0/14 | All 14 labeled refusal cases were refused |
+| Expected-value presence | 22/26 = 84.62% | Literal/unit-equivalent presence; refusals count as failures |
+| Labeled-evidence recall@5 | 100.00% | Coverage of labeled support passages in the first five retrieved results |
+| MRR | 0.9615 | Mean reciprocal rank: average of 1/rank of the first labeled relevant result |
+| Citation precision proxy | 84.62% | Verifier flag plus retrieved-ID membership; not independent entailment checking |
+| Sentence citation-marker coverage | 28.21% | Marker coverage, not independently labeled claim recall |
+| Pipeline L1 self-check | 22/26 = 84.62% | Self-reported verifier result, not independent groundedness |
+| Median / P95 of all timed calls | 43.9 / 100.1 ms | Includes refusals; excludes warm-ups and process startup/shutdown |
+| Median / P95 of answered-question medians | 62.6 / 101.6 ms | Distribution of 22 per-question medians, not request-level answered P95 |
+| Observed cache hits | 0/120 timed observations | A control check with caching disabled, not a measured cache false-hit rate |
+
+Quality aggregates use the last timed repeat per question. Across the three timed repeats, no question changed its returned draft text, ordered retrieval IDs, or refusal decision; no answered observation had a requested/observed version mismatch. These are observations on this dataset, not guarantees for other queries or independent statistical samples.
+
+### Trace Findings and Label-Support Limits
+
+| Case | Expected by dataset | Observed trace | Follow-up |
+| :--- | :--- | :--- | :--- |
+| `d01`, PostgreSQL 16 `vacuum_cost_limit` | `200` | Correct gold passage at rank 2; `VALUE_MISMATCH` names `-1` from `autovacuum_vacuum_cost_limit` | Investigate selection and setting/value binding; do not weaken validation to accept the related parameter's value |
+| `d02`, PostgreSQL 14 `vacuum_cost_limit` | `200` | Same rank-2 gold evidence and related-parameter mismatch | Same targeted investigation |
+| `d22`, PostgreSQL 16 `archive_mode` | Default `off` | Gold passage at rank 1; `NO_SUBSTANTIVE_EVIDENCE` | The assigned passage lists `off` as an option but does not state it is the default; audit label support |
+| `d25`, PostgreSQL 14 `ignore_system_indexes` | Default `off` | Gold passage at rank 1; `NO_SUBSTANTIVE_EVIDENCE` | The assigned passage describes behavior but does not state a default; audit label support |
+
+The committed [corpus](../data/processed/chunks.jsonl) explicitly states `vacuum_cost_limit` defaults to `200` in both versions (records at lines 491 and 1530); the related autovacuum setting instead defaults to `-1` (lines 242 and 1267). The `archive_mode` and `ignore_system_indexes` gold records at lines 1565 and 332 do not establish their labeled default claims. This is a finding about the assigned evidence, not an exhaustive audit of the whole corpus or every dataset label.
+
+Do not treat all four dataset-flagged refusals as confirmed application defects. A fact known elsewhere still needs support in the indexed evidence. Any later label corrections must be versioned and reported separately; they must not be presented as an application-quality improvement.
+
+### Operational and Claim Limits
+- The baseline log contained no matching `ERROR`, traceback, or failed record/store messages in its execution window. Four existing connection-pool shutdown timeout messages remained; request timings exclude process shutdown.
+- Qdrant client `1.20.0` versus server `1.13.2` still emits a compatibility warning. No versions or database volumes were changed to obtain this capture.
+- This is one hosted-runner capture using deterministic fallback, not Gemini synthesis performance, a memory/cache ablation, a cost-savings result, or statistical non-inferiority evidence.
+- The raw result and original dataset are unchanged. No retrieval threshold, prompt, answer writer, verifier, cache implementation, or memory behavior was tuned after seeing these scores.
+
 ## Development Baseline Capture: Setup Verified, Results Pending
 
 - **Reference before capture:** `cb4c996`, with 275 tests and all configured gates passing in [CI run 45192610092](https://github.com/Pranav2119/EvidenceFlow/actions/runs/45192610092).

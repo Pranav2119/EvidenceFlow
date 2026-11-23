@@ -9,7 +9,7 @@
 **EvidenceFlow AI** is an inspectable research-assistance prototype for complex, multi-turn technical questions over versioned PostgreSQL documentation (versions 14, 15, and 16).
 
 > [!IMPORTANT]
-> **Readiness review is in progress.** [CI at commit `aa83738`](https://github.com/Pranav2119/EvidenceFlow/actions/runs/45172813930) passed 249 tests and the configured metric gates. That verifies those checks, not production readiness or every historical performance claim. Evaluation repairs have passed 41 focused local tests; fresh end-to-end measurements and remaining correctness repairs are still required. See the [review roadmap](docs/ROADMAP.md) and [experiment validity notice](docs/experiments.md).
+> **Readiness review is in progress.** [CI at commit `b84c649`](https://github.com/Pranav2119/EvidenceFlow/actions/runs/45217948535) passed 281 tests and the configured metric gates, and captured the first uncached development baseline. This verifies those checks, not production readiness or factual answer quality. Gold-label support gaps, remaining correctness repairs, and Gemini-enabled evaluation are still open. See the [review roadmap](docs/ROADMAP.md) and [measured baseline with limitations](docs/experiments.md#baseline-dev-ci-45217948535-2026-11-23).
 
 The baseline path combines:
 1. **Rule-Based Guardrails & Abstention Routing**: Checks inputs and retrieved evidence, with refusal paths for detected unsafe or unsupported requests.
@@ -234,6 +234,13 @@ are not independent proof that claims are supported. CI latency is not a
 production SLA or proof of a performance improvement across different runners.
 Artifacts follow repository retention settings; retain the selected baseline
 when recording comparisons in [experiments.md](docs/experiments.md).
+
+The first capture is retained as
+[baseline_dev_ci_45217948535.json](data/benchmarks/baseline_dev_ci_45217948535.json).
+It contains 40 cases and 120 timed observations. Its 90.0% decision accuracy is
+against the current dataset labels, not a factual-correctness score; two inspected
+gold passages do not state the expected defaults. See the experiment ledger
+before interpreting the four dataset-flagged wrong refusals as application bugs.
 
 ### 3. Run the 40-Question Guardrail Benchmark Exam
 Evaluates the entire pipeline against legitimate questions, prompt injections, fake technical features, and out-of-domain queries:

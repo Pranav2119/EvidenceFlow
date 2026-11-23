@@ -65,5 +65,7 @@ Every Day/Task strictly follows this 3-phase cadence:
 - [x] Publish the evaluator repair as `cb4c996` and verify [CI run 45192610092](https://github.com/Pranav2119/EvidenceFlow/actions/runs/45192610092): 275 tests and all configured metric gates passed.
 - [x] Prepare development-only CI capture with per-repeat evidence records, observed-cache-hit rejection, honest metric labels, and failure-safe temporary settings; verify 47 focused local tests.
 - [ ] Publish and verify remaining repair batches in full CI after approval.
-- [ ] Record fresh development-only measurements before changing retrieval, prompts, cache, or memory mechanisms. Resolve the remaining evaluation-methodology limitations before using quality or performance numbers in a resume.
+- [x] Record the first fresh offline development baseline before RAG behavior changes: [run 45217948535](https://github.com/Pranav2119/EvidenceFlow/actions/runs/45217948535), 40 cases / 120 timed observations, with the original JSON retained and 281 full-suite tests passing.
+- [ ] Audit development ground-truth support, including the `d22` / `d25` default-value labels, before treating label-based scores as factual quality.
+- [ ] Resolve remaining evaluation-methodology limitations before resume quality/performance claims; establish a separately controlled Gemini-enabled baseline before prompt or generation changes.
 - [ ] Resolve the remaining critical citation, cache, version-state, and evaluation findings before claiming overall interview readiness.
