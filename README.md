@@ -199,6 +199,13 @@ before the full test suite and metric gate. CI selects local FastEmbed embedding
 and disables Gemini calls; these job-level settings do not change your local
 `.env`. Test failures and metric regressions still fail the job.
 
+CI caches the configured embedding model using the lockfile and embedding module
+as the cache key inputs. Model preparation allows three attempts with five-minute
+pauses to handle upstream download rate limits. The model cache is saved before
+tests, after an offline load and vector-size check; indexing and tests then load
+it with Hugging Face offline mode enabled.
+This cache does not include corpus data, conversation history, or API keys.
+
 ### 2. Run the 40-Question Guardrail Benchmark Exam
 Evaluates the entire pipeline against legitimate questions, prompt injections, fake technical features, and out-of-domain queries:
 ```powershell

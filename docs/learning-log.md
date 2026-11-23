@@ -1079,3 +1079,10 @@ Calling proprietary LLMs inside CI builds introduces cost, rate-limiting, and ne
 - A Docker-backed GitHub Actions run is still required; the known offline application failure prevents declaring the full workflow green.
 - For a routine local pull, preserve `.env` and database volumes, run `uv sync --frozen`, and start existing services. Database deletion or collection recreation is not part of this update.
 - Rewrite in my own words: why container readiness differs from corpus readiness, why pinned-environment execution can disprove a static-review assumption, and why a failing application test must not be hidden by a CI configuration repair.
+
+### Remote CI Follow-up: Embedding Model Availability
+- GitHub Actions run `45156516876` verified successful container initialization, checkout, uv/Python setup, dependency installation, and PostgreSQL migrations. Indexing then failed because anonymous Hugging Face model downloads hit HTTP 429; the reported quota window was 300 seconds.
+- The CI follow-up restores a model cache keyed by the lockfile and embedding module, prepares the unchanged model with at most three attempts and 300-second pauses, and verifies offline loading/vector size before saving the cache. Saving before application tests prevents an unrelated test failure from discarding a successful model download.
+- Indexing and tests inherit `HF_HUB_OFFLINE=1`; only model preparation enables Hub access. This is CI configuration, not a change to the embedding provider, model, or retrieval algorithm.
+- The exact Bash retry script passed stubbed checks for immediate success (one call, no wait), recovery on the third attempt (three calls, two waits), and persistent failure (exit 1 after three calls and two waits).
+- A local model-download check returned invalid JSON from the external service and did not reach inference. Offline model loading is therefore not claimed as locally verified; it must pass explicitly in the next GitHub run.

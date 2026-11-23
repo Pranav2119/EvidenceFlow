@@ -15,6 +15,8 @@ jobs:
       APP_ENV: test
       EMBEDDING_PROVIDER: fastembed
       GEMINI_API_KEY: ""
+      FASTEMBED_CACHE_PATH: .fastembed-cache
+      HF_HUB_OFFLINE: "1"
       POSTGRES_HOST: localhost
       POSTGRES_PORT: 5432
       POSTGRES_DB: evidenceflow_db
@@ -83,6 +85,40 @@ jobs:
 
       - name: Run PostgreSQL migrations
         run: uv run --frozen python -m evidenceflow.storage.migrate_postgres
+
+      - name: Restore embedding model cache
+        id: fastembed-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.FASTEMBED_CACHE_PATH }}
+          key: fastembed-${{ runner.os }}-${{ hashFiles('uv.lock', 'src/evidenceflow/storage/embeddings.py') }}
+
+      - name: Prepare embedding model
+        env:
+          HF_HUB_OFFLINE: "0"
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            if uv run --frozen python -c "from evidenceflow.storage.embeddings import get_embedding; get_embedding('CI model readiness check')"; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "::warning::Model preparation failed (attempt $attempt/3). Waiting 300 seconds before retrying to respect upstream rate limits."
+              sleep 300
+            fi
+          done
+          echo "::error::Embedding model preparation failed after three attempts."
+          exit 1
+
+      - name: Validate cached embedding model offline
+        run: uv run --frozen python -c "from evidenceflow.storage.embeddings import get_embedding, get_vector_dimension; assert len(get_embedding('CI offline model readiness check')) == get_vector_dimension()"
+
+      - name: Save embedding model cache
+        if: steps.fastembed-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.FASTEMBED_CACHE_PATH }}
+          key: ${{ steps.fastembed-cache.outputs.cache-primary-key }}
 
       - name: Index committed corpus in Qdrant
         run: uv run --frozen python -m evidenceflow.ingestion.index_qdrant
