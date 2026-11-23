@@ -1135,3 +1135,31 @@ Calling proprietary LLMs inside CI builds introduces cost, rate-limiting, and ne
 ### Shutdown
 - No application or database services were started for this repair, so there is nothing to stop on this validation machine.
 - On the original development machine, stop foreground Python/MCP processes with `Ctrl+C` when finished. If databases are no longer needed, `docker compose stop` stops containers while retaining their volumes; `docker compose start` starts those existing containers again.
+
+---
+
+## Session 21: Capturing an Inspectable Development Baseline (Draft for Author Review)
+
+### Starting Point and Scope
+- Evaluator repair `cb4c996` passed the full GitHub suite: **275 tests**, one Qdrant compatibility warning, and all metric gates. The compatibility warning and connection-pool shutdown delays also occurred before that repair.
+- Use CI's fresh databases rather than local/shared services. Keep the answering pipeline, retrieval settings, prompts, cache implementation, memory logic, dependency versions, and corpus unchanged while measuring their current behavior.
+- The development dataset has 40 unique questions: 26 answerable cases and 14 expected refusals. Each answerable case has an expected value and ground-truth evidence.
+
+### Measurement Controls and Failure Exercises
+- Run one warm-up and three timed calls per question with Gemini, memory, the scoped answer cache, and checkpointing off. A warm model/connection is allowed; a reused cached answer is not.
+- Capture before tests so test-created database changes cannot affect the baseline. Upload the JSON first so a later test failure does not discard an otherwise completed measurement.
+- Keep each timed draft and its citation/retrieval IDs, rather than only a 160-character preview of the last answer. For example, an early `4MB` answer and a later `128MB` answer must both remain inspectable.
+- A synthetic answered-but-wrong case correctly shows **100% decision accuracy but 0% expected-value presence**. These are unit-test outputs, not project benchmark scores; they demonstrate why the two metrics cannot be conflated.
+- Force `cache_hit=True` during warm-up or a timed call: the evaluator now rejects the run. Force a pipeline or dataset-loading error: temporary settings must remain/restored correctly. Give an empty dataset: the evaluator must fail instead of manufacturing zero-valued results.
+
+### Verification and Limits
+- Before implementation: **6 failed, 5 passed** runner tests. After implementation: **47 passed** across the three evaluation test files.
+- Read-only workflow validation passed for the development-only command, execution order, unique artifact names, and unchanged full-test and metric-gate commands.
+- A shared invocation helper keeps both execution paths' controls identical and restores temporary settings in `finally`. It does not modify graph wiring or answer logic.
+- Existing numeric metric keys are retained for compatibility, but definitions and printed labels state what they actually measure. Temperature is unknown/not applicable (`null`), not falsely reported as configured to zero.
+- Real CI baseline results are pending at this preparation stage. The offline baseline cannot establish Gemini synthesis quality, statistical non-inferiority, or production performance.
+
+### Author Reflection and Shutdown
+- Explain why an answer/refusal decision can be correct while the answer's numeric value is wrong.
+- Explain why adding many quick refusals could lower the overall median latency without making retrieval faster.
+- No local application/database services were started. CI owns and stops its disposable containers; original development volumes are untouched.

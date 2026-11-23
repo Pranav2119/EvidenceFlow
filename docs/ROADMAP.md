@@ -62,6 +62,8 @@ Every Day/Task strictly follows this 3-phase cadence:
 - [x] Repair the equal-defaults/changed-options comparison and verify seven focused regression cases locally.
 - [x] Verify the comparison repair in the full GitHub CI suite, keeping all integration tests and metric gates enabled.
 - [x] Repair evaluator value matching, scalar/list scoring, uncached baseline controls, and unsupported statistical-success reporting; verify 41 focused local tests.
+- [x] Publish the evaluator repair as `cb4c996` and verify [CI run 45192610092](https://github.com/Pranav2119/EvidenceFlow/actions/runs/45192610092): 275 tests and all configured metric gates passed.
+- [x] Prepare development-only CI capture with per-repeat evidence records, observed-cache-hit rejection, honest metric labels, and failure-safe temporary settings; verify 47 focused local tests.
 - [ ] Publish and verify remaining repair batches in full CI after approval.
 - [ ] Record fresh development-only measurements before changing retrieval, prompts, cache, or memory mechanisms. Resolve the remaining evaluation-methodology limitations before using quality or performance numbers in a resume.
 - [ ] Resolve the remaining critical citation, cache, version-state, and evaluation findings before claiming overall interview readiness.

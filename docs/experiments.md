@@ -4,6 +4,17 @@ This document tracks all empirical evaluation runs, benchmark datasets, ablation
 
 > **Validity notice:** Historical entries below are preserved as records, not re-certified results. Review found cache-contaminated baseline calls, incorrect value scoring, and unsupported non-inferiority success claims. Do not use those historical comparisons as current resume evidence until the affected runs and methods have been revalidated.
 
+## Development Baseline Capture: Setup Verified, Results Pending
+
+- **Reference before capture:** `cb4c996`, with 275 tests and all configured gates passing in [CI run 45192610092](https://github.com/Pranav2119/EvidenceFlow/actions/runs/45192610092).
+- **Dataset:** the committed `benchmark_dev_40.json` contains 40 unique questions: 26 answerable cases with expected values and ground truth, plus 14 expected refusals. Unsupported-version cases are intentional. The frozen split is not used.
+- **Protocol:** fresh CI databases, local FastEmbed, Gemini/memory/scoped answer cache/checkpointing off; one discarded warm-up and three timed executions per question. Capture runs before tests, and its JSON artifact is uploaded before the test suite.
+- **Auditability:** every timed observation retains its full draft, citations, ranked retrieved IDs, observed version, refusal details, L1 flag, and cache-hit flag. Refused drafts are not user-visible answers. Any observed cache hit fails this uncached baseline.
+- **Reporting limits:** decision accuracy is not factual correctness; value presence is not entailment; L1 flags and citation markers are self-check signals. Quality aggregates still use the final timed repeat per question. Repeats are correlated, and hosted-runner latency comparisons require caution.
+- **Component validation:** new safeguards reproduced 6 failures alongside 5 passing runner tests. After repair, all 47 tests across the three evaluation test files passed. Workflow checks verified dev-only arguments, baseline-before-tests ordering, unique artifacts, and unchanged full-test/metric-gate commands.
+- **Settings and metadata:** temporary Gemini-key overrides are restored on pipeline errors; dataset errors do not modify settings. Empty datasets are rejected. Temperature is `null`, not an invented configured value.
+- **Measurements:** no new application scores are claimed in this preparation entry. Record the first completed CI capture and its exact artifact/commit before changing retrieval, prompts, cache, memory, or answer-validation behavior. Prompt or Gemini-path changes will require a separately controlled Gemini-enabled baseline.
+
 ## Evaluation Correctness Repair: Component Validation Only
 
 This repair changes the measurement code, not prompts, retrieval, graph wiring, memory, or the cache implementation. No end-to-end development benchmark was rerun, and the frozen test split was not opened or executed.

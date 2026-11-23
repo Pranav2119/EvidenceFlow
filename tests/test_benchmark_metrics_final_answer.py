@@ -6,6 +6,7 @@ Verifies:
   3. Benchmark thread IDs start with 'bench-'.
 """
 
+import json
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -121,5 +122,85 @@ def test_baseline_requires_timed_runs(isolated_baseline, repeats):
     with pytest.raises(ValueError, match="repeats"):
         benchmark.run_benchmark(
             gemini_enabled=False, repeats=repeats, delay_seconds=0.0, verbose=False,
+        )
+    isolated_baseline.assert_not_called()
+
+
+def test_baseline_exports_each_timed_observation_without_claiming_factual_accuracy(
+    isolated_baseline, capsys,
+):
+    first = isolated_baseline.return_value.model_copy(update={"target_version": "16"})
+    second = first.model_copy(update={
+        "target_version": "14",
+        "draft_answer": "Explanatory context. " * 12 + "The default is 128MB [^chunk2].",
+        "retrieved_passages": [{"chunk_id": "chunk2"}],
+        "citations": [Citation(chunk_id="chunk2", doc_name="doc", section="Memory", quote="128MB", is_verified=True)],
+    })
+    isolated_baseline.side_effect = [first, first, second]
+
+    result = benchmark.run_benchmark(
+        gemini_enabled=False, repeats=2, delay_seconds=0.0, verbose=False,
+    )
+    saved = json.loads(json.dumps(result))
+    observations = saved["question_results"][0]["repeat_details"]
+    assert observations[0]["draft_answer"] == first.draft_answer
+    assert observations[1]["draft_answer"] == second.draft_answer
+    assert observations[1]["target_version"] == "14"
+    assert observations[1]["retrieved_chunk_ids"] == ["chunk2"]
+    assert observations[1]["citations"][0]["chunk_id"] == "chunk2"
+    assert observations[1]["cache_hit"] is False
+    assert observations[1]["l1_passed"] is True
+    assert saved["metrics"]["overall_accuracy_pct"] == 100.0
+    assert saved["metrics"]["value_accuracy_pct"] == 0.0
+    assert saved["temperature"] is None
+    assert saved["quality_sample"] == "last_timed_repeat_per_question"
+    output = capsys.readouterr().out
+    assert "Answer/refusal decision accuracy" in output
+    assert "Overall End-to-End" not in output
+
+
+@pytest.mark.parametrize("hit_on", [0, 1])
+def test_baseline_rejects_observed_cache_hits(isolated_baseline, hit_on):
+    normal = isolated_baseline.return_value
+    states = [normal, normal]
+    states[hit_on] = normal.model_copy(update={"cache_hit": True, "cached_layer": "L1_EXACT"})
+    isolated_baseline.side_effect = states
+
+    with pytest.raises(RuntimeError, match="cache hit"):
+        benchmark.run_benchmark(
+            gemini_enabled=False, repeats=1, delay_seconds=0.0, verbose=False,
+        )
+    assert isolated_baseline.call_count == hit_on + 1
+
+
+@pytest.mark.parametrize("failure_stage", ["dataset", "pipeline"])
+def test_baseline_restores_temporary_settings_on_failure(
+    isolated_baseline, monkeypatch, failure_stage,
+):
+    settings = benchmark.get_settings()
+    settings.GEMINI_API_KEY = "synthetic-test-key"
+    if failure_stage == "dataset":
+        monkeypatch.setattr(
+            benchmark, "load_benchmark_dataset",
+            Mock(side_effect=RuntimeError("synthetic dataset failure")),
+        )
+    else:
+        def fail_pipeline(**kwargs):
+            assert settings.GEMINI_API_KEY == ""
+            raise RuntimeError("synthetic pipeline failure")
+        isolated_baseline.side_effect = fail_pipeline
+
+    with pytest.raises(RuntimeError, match="synthetic"):
+        benchmark.run_benchmark(
+            gemini_enabled=False, repeats=1, delay_seconds=0.0, verbose=False,
+        )
+    assert settings.GEMINI_API_KEY == "synthetic-test-key"
+
+
+def test_baseline_rejects_empty_datasets(isolated_baseline, monkeypatch):
+    monkeypatch.setattr(benchmark, "load_benchmark_dataset", lambda path: {"questions": []})
+    with pytest.raises(ValueError, match="questions"):
+        benchmark.run_benchmark(
+            gemini_enabled=False, repeats=1, delay_seconds=0.0, verbose=False,
         )
     isolated_baseline.assert_not_called()

@@ -24,6 +24,7 @@ from typing import Any, Dict, List, Optional, Set
 
 from evidenceflow.config import get_settings
 from evidenceflow.graph.workflow import run_pipeline
+from evidenceflow.state import EvidenceFlowState
 from evidenceflow.eval.metrics import (
     calculate_recall_at_k,
     calculate_reciprocal_rank,
@@ -94,9 +95,25 @@ def run_benchmark(
         raise ValueError("repeats must be at least 1 to measure timed executions")
 
     settings = get_settings()
-    original_gemini_key = settings.GEMINI_API_KEY
-    if not gemini_enabled:
-        settings.GEMINI_API_KEY = ""
+
+    def run_once(query: str, version: Optional[str], thread_id: str) -> EvidenceFlowState:
+        original_gemini_key = settings.GEMINI_API_KEY
+        try:
+            if not gemini_enabled:
+                settings.GEMINI_API_KEY = ""
+            state = run_pipeline(
+                query=query,
+                version=version,
+                thread_id=thread_id,
+                use_postgres_checkpointer=False,
+                enable_memory=enable_memory,
+                enable_cache=False,
+            )
+            if state.cache_hit:
+                raise RuntimeError(f"Uncached benchmark received a cache hit for {thread_id}")
+            return state
+        finally:
+            settings.GEMINI_API_KEY = original_gemini_key
 
     # Select dataset file
     if dataset_file:
@@ -108,6 +125,8 @@ def run_benchmark(
 
     data = load_benchmark_dataset(file_path)
     questions = data.get("questions", [])
+    if not questions:
+        raise ValueError("Benchmark dataset must contain questions")
     total_q = len(questions)
 
     print("\n" + "=" * 76)
@@ -165,13 +184,10 @@ def run_benchmark(
         if gemini_enabled and delay_seconds > 0:
             time.sleep(delay_seconds)
 
-        final_state = run_pipeline(
+        final_state = run_once(
             query=query,
             version=version,
             thread_id=f"bench-{split}-{qid}-warmup",
-            use_postgres_checkpointer=False,
-            enable_memory=enable_memory,
-            enable_cache=False,
         )
 
         timed_latencies = []
@@ -181,13 +197,10 @@ def run_benchmark(
                 time.sleep(delay_seconds)
 
             t_start = time.perf_counter()
-            exec_state = run_pipeline(
+            exec_state = run_once(
                 query=query,
                 version=version,
                 thread_id=f"bench-{split}-{qid}-r{r}",
-                use_postgres_checkpointer=False,
-                enable_memory=enable_memory,
-                enable_cache=False,
             )
             t_end = time.perf_counter()
             duration_ms = (t_end - t_start) * 1000.0
@@ -204,7 +217,18 @@ def run_benchmark(
                 "latency_ms": round(duration_ms, 2),
                 "is_abstained": exec_state.is_abstained,
                 "abstention_code": exec_state.abstention_code,
+                "abstention_reason": exec_state.abstention_reason,
                 "synthesis_mode": rep_mode,
+                "target_version": exec_state.target_version,
+                "cache_hit": exec_state.cache_hit,
+                "draft_answer": exec_state.draft_answer,
+                "l1_passed": exec_state.l1_passed,
+                "citations": [citation.model_dump(mode="json") for citation in exec_state.citations],
+                "retrieved_chunk_ids": [
+                    p.get("chunk_id") or p.get("id")
+                    for p in exec_state.retrieved_passages
+                    if p.get("chunk_id") or p.get("id")
+                ],
             })
             final_state = exec_state
 
@@ -310,9 +334,6 @@ def run_benchmark(
             "answer_preview": draft_answer[:160],
         })
 
-    # Restore settings
-    settings.GEMINI_API_KEY = original_gemini_key
-
     # -----------------------------------------------------------------
     # Aggregate Metrics Calculation
     # -----------------------------------------------------------------
@@ -357,11 +378,23 @@ def run_benchmark(
         "gemini_mode": "ON" if gemini_enabled else "OFF (Deterministic Fallback)",
         "memory_mode": "ON (Neo4j)" if enable_memory else "OFF",
         "cache_mode": "OFF",
+        "checkpointer_mode": "OFF",
         "platform": f"{platform.system()} {platform.release()} ({platform.machine()})",
         "repeats": repeats,
         "delay_seconds": delay_seconds,
         "llm_model": settings.GEMINI_MODEL if gemini_enabled else "none (offline synthesizer)",
-        "temperature": 0.0,
+        "temperature": None,
+        "quality_sample": "last_timed_repeat_per_question",
+        "metric_definitions": {
+            "overall_accuracy_pct": "Correct answer/refusal decisions, not factual answer correctness.",
+            "value_accuracy_pct": "Expected-value presence with unit equivalence; refused answers fail.",
+            "citation_precision_pct": "Verifier flag plus membership in retrieved IDs, not independent quote/entailment verification.",
+            "citation_recall_pct": "Sentence citation-marker coverage, not independently labeled claim recall.",
+            "l1_self_check_pct": "Pipeline self-reported L1 result, not independent groundedness.",
+            "latency_median_ms": "All timed calls, including refusals; warm-ups excluded.",
+            "answered_latency_median_ms": "Median of per-question latency medians for the last-repeat answered cohort.",
+            "is_stable": "Abstention status only; does not establish answer-text or evidence stability.",
+        },
         "counts": {
             "total_questions": total_q,
             "answerable_questions": answerable_count,
@@ -402,15 +435,15 @@ def run_benchmark(
     print("=" * 76)
     print(f"| Metric | Count | Percentage / Value | Target / Classification |")
     print(f"| :--- | :---: | :---: | :--- |")
-    print(f"| **Overall Accuracy** | {overall_correct} / {total_q} | **{overall_acc_pct:.1f}%** | Overall End-to-End |")
+    print(f"| **Answer/refusal decision accuracy** | {overall_correct} / {total_q} | **{overall_acc_pct:.1f}%** | Not factual answer correctness |")
     print(f"| **Wrong Refusals (FP, $\\alpha$-error)** | {wrong_refusal_count} / {answerable_count} | **{wrong_refusal_pct:.1f}%** | Annoying user errors |")
-    print(f"| **Wrong Answers (FN, $\\beta$-error)** | {wrong_answer_count} / {should_refuse_count} | **{wrong_answer_pct:.1f}%** | Dangerous leakages |")
+    print(f"| **Unexpected answers to refusal cases** | {wrong_answer_count} / {should_refuse_count} | **{wrong_answer_pct:.1f}%** | Not all factual answer errors |")
     print(f"| **Retrieval Recall@5** | — | **{mean_recall:.1f}%** | Top-5 Ground Truth Coverage |")
     print(f"| **Retrieval MRR** | — | **{mean_mrr:.4f}** | Mean Reciprocal Rank |")
-    print(f"| **Value Accuracy** | {val_acc_count} / {answerable_count} | **{val_acc_pct:.1f}%** | Unit Equivalence Verified |")
-    print(f"| **Citation Precision** | — | **{mean_precision:.1f}%** | Verified Quoted Footnotes |")
-    print(f"| **Citation Recall** | — | **{mean_cit_recall:.1f}%** | Claims with Citations |")
-    print(f"| **L1 Groundedness (Self-Check)** | {l1_count} / {answerable_count} | **{l1_pct:.1f}%** | In-loop Pipeline Verifier |")
+    print(f"| **Expected-value presence** | {val_acc_count} / {answerable_count} | **{val_acc_pct:.1f}%** | Includes unit equivalence; not semantic correctness |")
+    print(f"| **Citation Precision** | — | **{mean_precision:.1f}%** | Verifier flag + retrieved-ID membership |")
+    print(f"| **Citation-marker Coverage** | — | **{mean_cit_recall:.1f}%** | Sentence-level marker presence |")
+    print(f"| **Pipeline L1 Self-Check** | {l1_count} / {answerable_count} | **{l1_pct:.1f}%** | Not independent groundedness |")
     print(f"| **Median Latency** | — | **{lat_percentiles[50]:.1f} ms** | Across {repeats} repeats |")
     print(f"| **P95 Latency** | — | **{lat_percentiles[95]:.1f} ms** | Tail latency |")
     print("=" * 76 + "\n")

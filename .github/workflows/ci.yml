@@ -126,6 +126,19 @@ jobs:
       - name: Initialize Neo4j memory schema
         run: uv run --frozen python -m evidenceflow.memory.init_neo4j
 
+      - name: Record uncached development baseline (Gemini off)
+        run: >-
+          uv run --frozen python -m evidenceflow.eval.run_benchmark
+          --split dev --no-gemini --repeats 3 --delay 0
+          --output "${{ runner.temp }}/dev-baseline.json"
+
+      - name: Upload development baseline
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev-baseline-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/dev-baseline.json
+          if-no-files-found: error
+
       - name: Run Full Test Suite
         run: uv run --frozen pytest tests -v
 

@@ -211,7 +211,31 @@ tests, after an offline load and vector-size check; indexing and tests then load
 it with Hugging Face offline mode enabled.
 This cache does not include corpus data, conversation history, or API keys.
 
-### 2. Run the 40-Question Guardrail Benchmark Exam
+### 2. CI Development Baseline (Gemini Off)
+
+CI runs the 40-question development dataset after database initialization and
+before the tests can alter database contents. Each question gets one discarded
+warm-up and three timed executions: 40 warm-ups and 120 timed observations.
+Gemini, conversational memory, the scoped answer cache, and checkpointing are
+disabled. Normal model/connection warm-up is retained.
+
+Download `dev-baseline-<run-id>-<attempt>` from the workflow run's **Artifacts**
+section. Its `dev-baseline.json` records the commit, configuration, per-repeat
+draft answers, citations, ranked retrieved passage IDs, observed version scope,
+refusal information, and cache-hit flags. Draft text on a refused turn is audit
+data, not an answer delivered to the user. An observed cache hit invalidates this
+uncached benchmark; a missing report fails the upload step.
+
+These are deterministic diagnostic results, not Gemini synthesis measurements.
+The legacy `overall_accuracy_pct` field measures answer/refusal decisions, not
+factual correctness. Quality aggregates use the last timed repeat per question;
+all timed observations are retained for inspection. L1 flags and citation markers
+are not independent proof that claims are supported. CI latency is not a
+production SLA or proof of a performance improvement across different runners.
+Artifacts follow repository retention settings; retain the selected baseline
+when recording comparisons in [experiments.md](docs/experiments.md).
+
+### 3. Run the 40-Question Guardrail Benchmark Exam
 Evaluates the entire pipeline against legitimate questions, prompt injections, fake technical features, and out-of-domain queries:
 ```powershell
 uv run python -m evidenceflow.eval.run_guardrail_exam --delay 1.5
