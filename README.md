@@ -139,6 +139,8 @@ Keep your existing `.env`, embedding provider, and Docker volumes. These CI
 configuration changes do not require rebuilding an already initialized local
 database or corpus. Use steps 5-6 for a fresh setup or missing database resources.
 Do not use `docker compose down -v`, `--drop`, or `--recreate` for a routine pull.
+Restart any running EvidenceFlow Python/MCP process after pulling application-code
+updates so it loads the new code; keep the existing database volumes.
 
 To stop the local services without deleting their data:
 

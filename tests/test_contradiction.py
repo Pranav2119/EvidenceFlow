@@ -64,17 +64,18 @@ def test_cross_version_changed_default_supersedes():
     assert "changed from '200' to '500'" in details["reason"]
 
 
-def test_cross_version_options_expansion_supersedes():
-    """When algorithms/options are added in a newer release, SUPERSEDES is recorded."""
+@pytest.mark.parametrize("default_clause", ["", " The default is off."])
+def test_cross_version_options_expansion_supersedes(default_clause):
+    """Added options are detected even when both versions have the same default."""
     p_older = {
         "chunk_id": "pg14_wal",
         "version": "14",
-        "content": "Parameter: wal_compression ( enum )\nAccepts off, on, pg_lz, lz4.",
+        "content": "Parameter: wal_compression ( enum )\nAccepts off, on, pg_lz, lz4." + default_clause,
     }
     p_newer = {
         "chunk_id": "pg16_wal",
         "version": "16",
-        "content": "Parameter: wal_compression ( enum )\nAccepts off, on, pg_lz, lz4, zstd.",
+        "content": "Parameter: wal_compression ( enum )\nAccepts off, on, pg_lz, lz4, zstd." + default_clause,
     }
     passages_by_v = {
         "14": [p_older],
@@ -87,6 +88,7 @@ def test_cross_version_options_expansion_supersedes():
 
     assert detected is True
     assert rel_type == "SUPERSEDES"
+    assert details["evolution_type"] == "options_update"
     assert "zstd" in details["reason"]
 
 
@@ -144,6 +146,7 @@ def test_break_it_on_purpose_identical_passages_no_contradiction():
     # Invariant: Must NOT hallucinate a conflict when defaults are identical!
     assert detected is False, "Expected contradiction_detected to be False for identical defaults!"
     assert rel_type == "NO_CONTRADICTION"
+    assert details["values_by_version"] == {"14": "200", "16": "200"}
 
 
 def test_contradiction_analyst_node_execution():
@@ -165,9 +168,19 @@ def test_contradiction_analyst_node_execution():
         ],
     )
 
-    res = contradiction_analyst_node(state)
+    with (
+        patch("evidenceflow.graph.nodes.contradiction.get_settings") as mock_settings,
+        patch("evidenceflow.graph.nodes.contradiction.record_passage_relationship", return_value=True) as mock_record,
+    ):
+        mock_settings.return_value.GEMINI_API_KEY = ""
+        res = contradiction_analyst_node(state)
+
     assert res["contradiction_detected"] is True
     assert res["contradiction_details"]["relationship_type"] == "SUPERSEDES"
+    mock_record.assert_called_once()
+    assert mock_record.call_args.kwargs["subject_passage_id"] == "pg16_wal_005"
+    assert mock_record.call_args.kwargs["target_passage_id"] == "pg14_wal_001"
+    assert mock_record.call_args.kwargs["rel_type"] == "SUPERSEDES"
 
     audit = res["audit_trail"][-1]
     assert audit["node"] == "contradiction_analyst"

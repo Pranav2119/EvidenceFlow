@@ -1086,3 +1086,16 @@ Calling proprietary LLMs inside CI builds introduces cost, rate-limiting, and ne
 - Indexing and tests inherit `HF_HUB_OFFLINE=1`; only model preparation enables Hub access. This is CI configuration, not a change to the embedding provider, model, or retrieval algorithm.
 - The exact Bash retry script passed stubbed checks for immediate success (one call, no wait), recovery on the third attempt (three calls, two waits), and persistent failure (exit 1 after three calls and two waits).
 - A local model-download check returned invalid JSON from the external service and did not reach inference. Offline model loading is therefore not claimed as locally verified; it must pass explicitly in the next GitHub run.
+
+---
+
+## Session 19: Deterministic Option-Change Detection (Draft for Author Review)
+**Date**: 2026-11-23
+**Scope**: One comparison decision and its focused tests. No project files, database data, or existing learning-log content were deleted.
+
+- Failure scenario: two synthetic passages both say `Default is off`, but the newer passage adds `zstd`. The comparison returned `NO_CONTRADICTION` before checking the option sets.
+- The strengthened tests reproduced the issue with **2 failed, 5 passed**. The node test explicitly disables LLM use and mocks only the graph-write boundary; the separate real Neo4j integration test remains enabled.
+- The fix checks option changes before concluding that equal defaults imply no detected change. Changed-default comparisons retain their existing priority.
+- After the fix, all **7 focused regression cases passed**. Equal defaults plus added options return `SUPERSEDES` with `evolution_type=options_update`; identical default-only passages still return `NO_CONTRADICTION` and retain their version/value details.
+- These are component regression results, not latency benchmarks or overall quality measurements. The full CI rerun and the remaining critical cache, citation, version-state, and scoring repairs are still required before an interview-readiness approval.
+- Rewrite in my own words: why an unchanged default does not imply unchanged supported behavior, and why a deterministic unit test should not depend on a live LLM or database.

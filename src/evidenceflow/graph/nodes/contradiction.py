@@ -116,19 +116,6 @@ def analyze_cross_version_differences_deterministic(
                 "reason": reason,
                 "values_by_version": {v_older: def_older, v_newer: def_newer},
             }
-        else:
-            # Values are identical! NO CONTRADICTION
-            reason = f"PostgreSQL {v_older} and PostgreSQL {v_newer} both specify default value of '{def_older}'."
-            return False, "NO_CONTRADICTION", {
-                "relationship_type": "NO_CONTRADICTION",
-                "subject_version": v_newer,
-                "target_version": v_older,
-                "subject_chunk_id": p_newer["chunk_id"],
-                "target_chunk_id": p_older["chunk_id"],
-                "reason": reason,
-                "values_by_version": {v_older: def_older, v_newer: def_newer},
-            }
-
     # Compare options/algorithms
     opts_older = set(info_older.get("options") or [])
     opts_newer = set(info_newer.get("options") or [])
@@ -150,6 +137,19 @@ def analyze_cross_version_differences_deterministic(
             "target_chunk_id": p_older["chunk_id"],
             "reason": reason,
             "values_by_version": {v_older: list(opts_older), v_newer: list(opts_newer)},
+        }
+
+    # Equal defaults do not rule out changes to supported options.
+    if def_older and def_newer and def_older == def_newer:
+        reason = f"PostgreSQL {v_older} and PostgreSQL {v_newer} both specify default value of '{def_older}'."
+        return False, "NO_CONTRADICTION", {
+            "relationship_type": "NO_CONTRADICTION",
+            "subject_version": v_newer,
+            "target_version": v_older,
+            "subject_chunk_id": p_newer["chunk_id"],
+            "target_chunk_id": p_older["chunk_id"],
+            "reason": reason,
+            "values_by_version": {v_older: def_older, v_newer: def_newer},
         }
 
     # Identical or no explicit differences detected

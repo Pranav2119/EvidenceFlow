@@ -55,3 +55,8 @@ Every Day/Task strictly follows this 3-phase cadence:
 - [x] Validate the frozen Windows environment and collect all 248 tests without changing application logic or dependency versions.
 - [x] Verify container startup, dependency installation, and PostgreSQL migrations in GitHub Actions; add bounded model preparation and caching after observing Hugging Face download rate limits.
 - [ ] Complete a passing Docker-backed CI run. The targeted offline checks currently report 15 passed and one existing contradiction-analysis test failure; no tests or quality thresholds were weakened.
+
+### Interview-Readiness Correctness Review (2026-11-23)
+- [x] Repair the equal-defaults/changed-options comparison and verify seven focused regression cases locally.
+- [ ] Verify the comparison repair in the full GitHub CI suite, keeping all integration tests and metric gates enabled.
+- [ ] Resolve the remaining critical citation, cache, version-state, and evaluation findings before claiming overall interview readiness.
