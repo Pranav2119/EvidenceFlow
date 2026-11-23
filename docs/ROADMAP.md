@@ -49,3 +49,8 @@ Every Day/Task strictly follows this 3-phase cadence:
 - [x] Day 16: Benchmark comparison: EvidenceFlow vs. pgvector + full-text vs. recursive SQL
 - [x] Day 17: External API FastMCP server with rate-limiting & schema validation
 - [x] Day 18: CI regression test gate (preventing recall/groundedness regressions) & release packaging
+
+### CI Reproducibility Follow-up (2026-11-23)
+- [x] Configure image-compatible health checks, frozen dependency installation, committed-corpus indexing, and Neo4j schema initialization before CI tests.
+- [x] Validate the frozen Windows environment and collect all 248 tests without changing application logic or dependency versions.
+- [ ] Complete a passing Docker-backed CI run. The targeted offline checks currently report 15 passed and one existing contradiction-analysis test failure; no tests or quality thresholds were weakened.

@@ -1054,3 +1054,28 @@ Standard software CI tests verify code syntax, deterministic functions, and sche
 #### Q3: How does the CI gate test cache integrity without calling live LLMs?
 **Answer**:  
 Calling proprietary LLMs inside CI builds introduces cost, rate-limiting, and network flakiness. Our CI gate evaluates cache integrity through deterministic cryptographic probing: it primes the L1 Exact cache with a verified entry under PostgreSQL 16 scope, then executes 4 synthetic probes: (1) querying under PostgreSQL 14 scope (asserting 0 cross-version leaks), (2) querying under a tampered configuration hash (asserting 0 configuration leaks), (3) querying the exact key (asserting valid hit delivery), and (4) querying after chunk invalidation (asserting stale eviction). This achieves mathematical proof of cache isolation in under 5 milliseconds with zero external API calls.
+
+---
+
+## Session 18: CI-Only Reproducibility Repair (Draft for Author Review)
+**Date**: 2026-11-23
+**Scope**: CI provisioning and local setup documentation only. Application logic, dependency manifests, the lockfile, local Compose configuration, and benchmark data are unchanged.
+
+### Concepts and Trade-offs
+- A container health check runs inside the container. CI's Qdrant check required `curl`, which its image does not include; the replacement uses the same Bash TCP check as local Compose.
+- A healthy database is not a populated database. Fresh CI containers need PostgreSQL migrations, Qdrant indexing from the committed corpus, and Neo4j schema/version initialization before integration tests.
+- CI uses local FastEmbed and an empty Gemini key at job scope. These settings do not overwrite the local `.env` or change existing Docker volumes.
+
+### Changes and Verification
+- Pinned CI's uv version to `0.13.5`, retained frozen dependency installation, corrected the PostgreSQL health-check identity, and added the missing database initialization steps.
+- Restored the project `.venv` on Windows with uv `0.13.5` and Python `3.13.17`; the frozen install built the project and installed the existing locked dependencies successfully.
+- Workflow YAML checks passed for service-setting consistency, health-command parity with Compose, bootstrap ordering, and absence of destructive bootstrap flags or ignored failures.
+- Full test collection succeeded: **248 tests collected**, not 248 tests passed.
+- The targeted offline MCP and contradiction checks returned **15 passed, 1 failed**. The existing `test_contradiction_analyst_node_execution` expects `SUPERSEDES` when a compression option is added, but the implementation returns `NO_CONTRADICTION` as soon as it sees equal defaults. This application logic was not changed in the CI-only repair.
+- Review correction: the unchanged external async tests passed **8/8** before editing. Locked AnyIO `4.15.1` selects available backends, so missing Trio was not a reproduced failure and no shared test fixture was added.
+- The frozen benchmark test dataset was not opened or executed. No benchmark scores were recalculated.
+
+### Remaining Verification and Reflection
+- A Docker-backed GitHub Actions run is still required; the known offline application failure prevents declaring the full workflow green.
+- For a routine local pull, preserve `.env` and database volumes, run `uv sync --frozen`, and start existing services. Database deletion or collection recreation is not part of this update.
+- Rewrite in my own words: why container readiness differs from corpus readiness, why pinned-environment execution can disprove a static-review assumption, and why a failing application test must not be hidden by a CI configuration repair.

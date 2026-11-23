@@ -97,14 +97,53 @@ Services exposed:
 - **Neo4j 5**: Port `7474` (Browser UI) & `7687` (Bolt) (`evidenceflow-neo4j`)
 
 ### 4. Install Dependencies
+Run from the repository root. This creates or updates `.venv` using the versions in
+[uv.lock](uv.lock), without upgrading or rewriting the lockfile.
+
 ```powershell
-uv sync
+uv sync --frozen
 ```
 
 ### 5. Run Database Migrations
 Initialize LangGraph checkpointer schemas, immutable audit tables, and append-only database triggers:
 ```powershell
-uv run python -m evidenceflow.storage.migrate_postgres
+uv run --frozen python -m evidenceflow.storage.migrate_postgres
+```
+
+### 6. Initialize the Corpus and Memory Schema
+For a fresh setup, index the committed [corpus chunks](data/processed/chunks.jsonl)
+into Qdrant and initialize Neo4j before running queries or integration tests:
+
+```powershell
+uv run --frozen python -m evidenceflow.ingestion.index_qdrant
+uv run --frozen python -m evidenceflow.memory.init_neo4j
+```
+
+With `EMBEDDING_PROVIDER=fastembed`, the first indexing run downloads the local
+embedding model; it does not need a Gemini API key. The indexing command creates
+a missing collection or upserts stable passage IDs. It does not recreate an
+existing collection.
+
+### Updating an Existing Local Checkout
+After changes are merged into the branch you use locally, pull from a clean
+working tree and synchronize the virtual environment:
+
+```powershell
+git pull --ff-only
+uv sync --frozen
+docker compose up -d
+docker compose ps
+```
+
+Keep your existing `.env`, embedding provider, and Docker volumes. These CI
+configuration changes do not require rebuilding an already initialized local
+database or corpus. Use steps 5-6 for a fresh setup or missing database resources.
+Do not use `docker compose down -v`, `--drop`, or `--recreate` for a routine pull.
+
+To stop the local services without deleting their data:
+
+```powershell
+docker compose stop
 ```
 
 ---
@@ -148,10 +187,17 @@ uv run python -m evidenceflow.mcp.corpus_server
 ## Automated Testing & Benchmarks
 
 ### 1. Run the Full Test Suite
-Executes 55 automated tests covering prompt injections, out-of-scope detection, value verifier normalization, RBAC role restrictions, append-only triggers, process-restart recovery, and thread isolation:
+Runs unit, integration, and failure tests covering prompt injections, out-of-scope detection, value verifier normalization, RBAC role restrictions, append-only triggers, process-restart recovery, and thread isolation. Integration tests require the initialized services from the setup steps above:
 ```powershell
-uv run pytest tests/ -v
+uv run --frozen pytest tests -v
 ```
+
+The [GitHub Actions workflow](.github/workflows/ci.yml) uses uv `0.13.5`,
+Python 3.13, and fresh PostgreSQL, Qdrant, and Neo4j service containers. It runs
+migrations, indexes the committed corpus, and initializes the memory schema
+before the full test suite and metric gate. CI selects local FastEmbed embeddings
+and disables Gemini calls; these job-level settings do not change your local
+`.env`. Test failures and metric regressions still fail the job.
 
 ### 2. Run the 40-Question Guardrail Benchmark Exam
 Evaluates the entire pipeline against legitimate questions, prompt injections, fake technical features, and out-of-domain queries:
