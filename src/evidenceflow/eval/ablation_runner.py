@@ -3,8 +3,8 @@ ablation_runner.py: Multi-condition ablation framework for EvidenceFlow AI.
 Systematically evaluates 4 pipeline configurations:
   1. Baseline (Stateless, No Cache)
   2. +Memory (Neo4j Conversational Memory Graph only)
-  3. +Cache (5-Layer Scoped Cache only)
-  4. +Both / Full System (Memory + 5-Layer Scoped Cache)
+  3. +Cache (Scoped Cache enabled)
+  4. +Both / Full System (Memory + Scoped Cache)
 
 Measures latency reduction, token consumption, cost per 1k queries,
 and collects sample distributions for statistical non-inferiority analysis.
@@ -50,7 +50,7 @@ class AblationCondition:
 CONDITIONS = [
     AblationCondition("Baseline", enable_memory=False, enable_cache=False, description="Stateless, No Cache"),
     AblationCondition("+Memory", enable_memory=True, enable_cache=False, description="Neo4j Memory Graph Active, No Cache"),
-    AblationCondition("+Cache", enable_memory=False, enable_cache=True, description="5-Layer Scoped Cache Active, No Memory"),
+    AblationCondition("+Cache", enable_memory=False, enable_cache=True, description="Scoped Cache Enabled, No Memory"),
     AblationCondition("+Both", enable_memory=True, enable_cache=True, description="Full EvidenceFlow (Memory + Scoped Cache)"),
 ]
 
@@ -174,7 +174,7 @@ def run_condition_evaluation(
 
             # Check overall correctness
             if expected_answerable:
-                val_ok = check_value_accuracy(state.draft_answer, expected_values) if expected_values else True
+                val_ok = all(check_value_accuracy(state.draft_answer, value) for value in expected_values)
                 if not state.is_abstained and state.l1_passed and val_ok:
                     correct_count += 1
             else:

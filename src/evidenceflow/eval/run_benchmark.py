@@ -88,8 +88,11 @@ def run_benchmark(
     enable_memory: bool = False,
 ) -> Dict[str, Any]:
     """
-    Executes the benchmark suite over the designated split or file.
+    Executes the benchmark suite with cache disabled, including warm-up runs.
     """
+    if repeats < 1:
+        raise ValueError("repeats must be at least 1 to measure timed executions")
+
     settings = get_settings()
     original_gemini_key = settings.GEMINI_API_KEY
     if not gemini_enabled:
@@ -113,6 +116,7 @@ def run_benchmark(
     print(f"Dataset File:     {file_path.name} ({total_q} questions)")
     print(f"Gemini Mode:      {'ON (Live LLM)' if gemini_enabled else 'OFF (Deterministic Fallback)'}")
     print(f"Memory Mode:      {'ON (Neo4j Conversational Memory)' if enable_memory else 'OFF (Direct Single-Turn)'}")
+    print("Cache Mode:       OFF (Uncached baseline)")
     print(f"Latency Repeats:  {repeats} runs (warm-up discarded)")
     print(f"Query Pacing:     {delay_seconds}s delay")
     print(f"Score Threshold:  {settings.RETRIEVAL_SCORE_THRESHOLD}")
@@ -167,6 +171,7 @@ def run_benchmark(
             thread_id=f"bench-{split}-{qid}-warmup",
             use_postgres_checkpointer=False,
             enable_memory=enable_memory,
+            enable_cache=False,
         )
 
         timed_latencies = []
@@ -182,6 +187,7 @@ def run_benchmark(
                 thread_id=f"bench-{split}-{qid}-r{r}",
                 use_postgres_checkpointer=False,
                 enable_memory=enable_memory,
+                enable_cache=False,
             )
             t_end = time.perf_counter()
             duration_ms = (t_end - t_start) * 1000.0
@@ -350,6 +356,7 @@ def run_benchmark(
         "vector_score_threshold": settings.RETRIEVAL_SCORE_THRESHOLD,
         "gemini_mode": "ON" if gemini_enabled else "OFF (Deterministic Fallback)",
         "memory_mode": "ON (Neo4j)" if enable_memory else "OFF",
+        "cache_mode": "OFF",
         "platform": f"{platform.system()} {platform.release()} ({platform.machine()})",
         "repeats": repeats,
         "delay_seconds": delay_seconds,

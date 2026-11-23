@@ -6,13 +6,16 @@
 [![PostgreSQL](https://img.shields.io/badge/database-PostgreSQL--16-blue.svg)](https://www.postgresql.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**EvidenceFlow AI** is an inspectable, deterministic research-assistance platform for complex, multi-turn technical questions over versioned PostgreSQL documentation (versions 14, 15, and 16).
+**EvidenceFlow AI** is an inspectable research-assistance prototype for complex, multi-turn technical questions over versioned PostgreSQL documentation (versions 14, 15, and 16).
 
-Unlike conventional RAG chatbots that produce ungrounded hallucinations when features change or queries ask for non-existent settings, EvidenceFlow enforces:
-1. **Deterministic Guardrails & Abstention Routing**: Intercepts prompt injections, out-of-scope domain queries, ungrounded technical tokens, and cross-version discrepancies before token generation.
-2. **True Hybrid Retrieval (Dense + BM25)**: Fuses 384-dimensional dense semantic embeddings with lexical Okapi BM25 rankings via Reciprocal Rank Fusion (RRF), ensuring exact technical keywords and parameter names rank at #1.
-3. **L1 & L1.5 Deterministic Verification**: Every factual statement is verified against the cited documentation chunk before output delivery. Quantities, units, and configuration bounds (`default`, `minimum`, `maximum`) are strictly validated in the same sentence as the claim.
-4. **ACID Step Ledger & PostgreSQL Checkpointing**: Conversation threads survive process restarts via `PostgresSaver`. Every node transition, model latency, token count, and claim SHA-256 hash is recorded in an immutable, append-only PostgreSQL ledger.
+> [!IMPORTANT]
+> **Readiness review is in progress.** [CI at commit `aa83738`](https://github.com/Pranav2119/EvidenceFlow/actions/runs/45172813930) passed 249 tests and the configured metric gates. That verifies those checks, not production readiness or every historical performance claim. Evaluation repairs have passed 41 focused local tests; fresh end-to-end measurements and remaining correctness repairs are still required. See the [review roadmap](docs/ROADMAP.md) and [experiment validity notice](docs/experiments.md).
+
+The baseline path combines:
+1. **Rule-Based Guardrails & Abstention Routing**: Checks inputs and retrieved evidence, with refusal paths for detected unsafe or unsupported requests.
+2. **Hybrid Retrieval (Dense + BM25)**: Combines 384-dimensional Qdrant dense retrieval with local Okapi BM25 rankings through Reciprocal Rank Fusion (RRF).
+3. **L1 & L1.5 Citation and Value Checks**: Checks cited passages and nearby quantity/setting matches. Known validation gaps remain under review; passing these checks is not proof that every claim is supported.
+4. **Step Ledger & PostgreSQL Checkpointing**: Stores conversation checkpoints through `PostgresSaver` and records step and claim-evidence data in PostgreSQL. Token-accounting coverage still needs validation before total-cost claims.
 
 ---
 

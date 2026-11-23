@@ -1099,3 +1099,39 @@ Calling proprietary LLMs inside CI builds introduces cost, rate-limiting, and ne
 - After the fix, all **7 focused regression cases passed**. Equal defaults plus added options return `SUPERSEDES` with `evolution_type=options_update`; identical default-only passages still return `NO_CONTRADICTION` and retain their version/value details.
 - These are component regression results, not latency benchmarks or overall quality measurements. The full CI rerun and the remaining critical cache, citation, version-state, and scoring repairs are still required before an interview-readiness approval.
 - Rewrite in my own words: why an unchanged default does not imply unchanged supported behavior, and why a deterministic unit test should not depend on a live LLM or database.
+
+### Verification Follow-up
+- [GitHub Actions run 45172813930](https://github.com/Pranav2119/EvidenceFlow/actions/runs/45172813930), commit `aa83738`, subsequently passed **249 tests**, with one warning, and all configured metric gates. This supersedes the earlier pending-CI notes, not the remaining correctness findings.
+
+---
+
+## Session 20: Trustworthy Measurement Controls (Draft for Author Review)
+
+### Concepts and Concrete Failure Cases
+- A scorer must distinguish a complete value from a substring: expected `8MB` must not match `128MB`, and expected `1` must not match `-1` or `0.1`. Citation IDs are metadata, not answer values.
+- A scalar checker accepts one expected value. The ablation runner now checks every required value individually: `["4MB", "8MB"]` passes only when both are present. This remains a presence check, not semantic proof of an answer.
+- An uncached baseline must disable cache during warm-up as well as timed execution. Otherwise the benchmark can compare cached work against the wrong baseline.
+- Non-inferiority asks whether a quality drop exceeds a predefined margin; `0.02` means two percentage points. A confidence bound expresses uncertainty about that drop. One observation or constant observed samples cannot justify the old zero-uncertainty proof claims.
+
+### Verified Synthetic Outcomes
+- The three evaluation test files initially produced **20 failed, 19 passed**. Two added CLI cases also failed. After the repair, all **41 focused tests passed**.
+- A synthetic baseline invocation with `repeats=2` calls the mocked pipeline three times: warm-up, repeat 0, repeat 1. Every call has `enable_cache=False`; the returned benchmark metadata says `cache_mode=OFF`.
+- Samples `[1.0]` and `[0.0]` now retain their observed difference of `1.0`, but return `INCONCLUSIVE` with unavailable inference fields instead of invented success.
+- Inconclusive CLI runs write their report, render unavailable statistics as `N/A`, and exit `1` even with `--break-it`. The tests redirect outputs to temporary paths, not the historical experiment files.
+- Positive controls still accept complete values, signed values, decimals, and existing unit equivalences. No project files, original notes, benchmark data, or database volumes were deleted.
+
+### Trade-offs and Remaining Work
+- Kept the existing normal approximation as an explicitly exploratory calculation instead of introducing an unreviewed statistical method. Correlated repeats and self-reported L1 success still cannot establish independent quality preservation.
+- Updated new-report field names and their consumers: `ci_upper_bound`, `confidence_level`, and `z_stat`. Historical JSON artifacts remain unchanged.
+- Corrected README guarantees and labeled old performance results as requiring revalidation. No measured performance improvement is claimed from these component tests.
+- No dependency versions, prompts, retrieval logic, graph wiring, memory schema, cache implementation, or local service configuration changed.
+- Next: approved publication and full CI verification, a fresh development-only baseline with honestly labeled metrics, then measured citation/cache/version-state repairs. The frozen test split remains untouched.
+
+### Author Reflection
+- Explain why `128MB` matching expected `8MB` makes a benchmark unreliable even if the application test suite is green.
+- Explain why a warm-up cache hit would invalidate an uncached latency comparison.
+- Explain why "all observed checks passed" is different from statistical proof that quality cannot degrade.
+
+### Shutdown
+- No application or database services were started for this repair, so there is nothing to stop on this validation machine.
+- On the original development machine, stop foreground Python/MCP processes with `Ctrl+C` when finished. If databases are no longer needed, `docker compose stop` stops containers while retaining their volumes; `docker compose start` starts those existing containers again.

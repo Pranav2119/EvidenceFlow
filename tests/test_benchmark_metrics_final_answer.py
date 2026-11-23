@@ -6,7 +6,13 @@ Verifies:
   3. Benchmark thread IDs start with 'bench-'.
 """
 
+from types import SimpleNamespace
+from unittest.mock import Mock
+
 import pytest
+
+import evidenceflow.eval.run_benchmark as benchmark
+from evidenceflow.state import Citation, EvidenceFlowState
 
 
 def test_final_answer_metrics_on_refused_and_answered():
@@ -66,3 +72,54 @@ def test_bench_thread_id_prefix():
     assert repeat_id.startswith("bench-")
     assert "bench_" not in warmup_id
     assert "bench_" not in repeat_id
+
+
+@pytest.fixture
+def isolated_baseline(monkeypatch):
+    state = EvidenceFlowState(
+        query="Synthetic memory question",
+        draft_answer="The default is 4MB [^chunk1].",
+        retrieved_passages=[{"chunk_id": "chunk1"}],
+        citations=[Citation(chunk_id="chunk1", doc_name="doc", section="Memory", quote="", is_verified=True)],
+        l1_passed=True,
+    )
+    dataset = {
+        "questions": [{
+            "id": "synthetic",
+            "query": state.query,
+            "version": "16",
+            "expected_value": "4MB",
+            "ground_truth_chunks": ["chunk1"],
+        }],
+    }
+    settings = SimpleNamespace(
+        GEMINI_API_KEY="",
+        GEMINI_MODEL="synthetic-model",
+        EMBEDDING_PROVIDER="fastembed",
+        RETRIEVAL_SCORE_THRESHOLD=0.6,
+    )
+    pipeline = Mock(return_value=state)
+    monkeypatch.setattr(benchmark, "get_settings", lambda: settings)
+    monkeypatch.setattr(benchmark, "load_benchmark_dataset", lambda path: dataset)
+    monkeypatch.setattr(benchmark, "get_git_commit_hash", lambda: "synthetic")
+    monkeypatch.setattr(benchmark, "run_pipeline", pipeline)
+    return pipeline
+
+
+def test_baseline_disables_cache_for_warmup_and_timed_runs(isolated_baseline):
+    result = benchmark.run_benchmark(
+        gemini_enabled=False, repeats=2, delay_seconds=0.0, verbose=False,
+    )
+    assert isolated_baseline.call_count == 3
+    assert all(call.kwargs.get("enable_cache") is False for call in isolated_baseline.call_args_list)
+    assert result["cache_mode"] == "OFF"
+    assert result["metrics"]["value_accuracy_pct"] == 100.0
+
+
+@pytest.mark.parametrize("repeats", [0, -1])
+def test_baseline_requires_timed_runs(isolated_baseline, repeats):
+    with pytest.raises(ValueError, match="repeats"):
+        benchmark.run_benchmark(
+            gemini_enabled=False, repeats=repeats, delay_seconds=0.0, verbose=False,
+        )
+    isolated_baseline.assert_not_called()

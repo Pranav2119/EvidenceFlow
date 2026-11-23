@@ -132,6 +132,34 @@ def test_value_accuracy_unit_equivalence():
     assert check_value_accuracy("Any answer.", expected_value=None)
 
 
+@pytest.mark.parametrize(
+    "answer, expected_value",
+    [
+        ("shared_buffers defaults to 128MB.", "8MB"),
+        ("The connection limit is unchanged.", "on"),
+        ("The default is -1.", "1"),
+        ("The default is 0.1.", "1"),
+        ("The default is 1000.", "100"),
+        ("See the documentation [^pg16-setting-100].", "100"),
+    ],
+)
+def test_value_accuracy_rejects_partial_values_and_citation_ids(answer, expected_value):
+    assert check_value_accuracy(answer, expected_value) is False
+
+
+@pytest.mark.parametrize(
+    "answer, expected_value",
+    [
+        ("The default is -1.", "-1"),
+        ("The default is 100.", "100"),
+        ("The allocation is 1 MB.", "1024kB"),
+        ("The threshold is 0.1.", "0.1"),
+    ],
+)
+def test_value_accuracy_keeps_complete_value_matches(answer, expected_value):
+    assert check_value_accuracy(answer, expected_value) is True
+
+
 def test_error_classification():
     """Verify Wrong Refusal (FP) and Wrong Answer (FN) boolean classifications."""
     # Legitimate question (should_abstain=False)

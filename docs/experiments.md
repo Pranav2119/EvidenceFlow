@@ -2,6 +2,40 @@
 
 This document tracks all empirical evaluation runs, benchmark datasets, ablation studies, and guardrail threshold measurements across project milestones.
 
+> **Validity notice:** Historical entries below are preserved as records, not re-certified results. Review found cache-contaminated baseline calls, incorrect value scoring, and unsupported non-inferiority success claims. Do not use those historical comparisons as current resume evidence until the affected runs and methods have been revalidated.
+
+## Evaluation Correctness Repair: Component Validation Only
+
+This repair changes the measurement code, not prompts, retrieval, graph wiring, memory, or the cache implementation. No end-to-end development benchmark was rerun, and the frozen test split was not opened or executed.
+
+| Synthetic regression input | Before repair | After repair |
+| :--- | :--- | :--- |
+| Expected `8MB`; answer says `128MB` | Incorrect match | No match |
+| Expected `on`; answer contains only `connection` | Incorrect match | No match |
+| Expected `1`; answer says `-1` or `0.1` | Incorrect match | No match |
+| Expected `100`; answer contains only `[^pg16-setting-100]` | Incorrect match | No match |
+| Required values `4MB`, `8MB`; answer includes both | Incorrectly failed when the list was passed to a scalar checker | Passes; omitting either required value fails |
+| One baseline question, two timed repeats | All three calls inherited cache-enabled defaults | Warm-up and both timed calls explicitly use `enable_cache=False` |
+| Quality samples `[1.0]` vs. `[0.0]` | Reported zero difference and "PROVEN NON-INFERIOR" | Observed difference `1.0`; inference is `INCONCLUSIVE` |
+| Empty samples, or constant samples with zero estimated variance | Unsupported success / fabricated uncertainty | `INCONCLUSIVE`; unavailable bounds/statistics are `null` / `N/A` |
+| Inconclusive CLI run, with or without `--break-it` | Could finish with a proof-success message and success exit | Writes the report and exits with status `1` |
+
+Validation used synthetic data and mocked pipeline boundaries, with no database or LLM calls:
+- Initial 39-case run: **20 failed, 19 passed**.
+- Two additional CLI regression cases: **both failed** before implementation.
+- After repair: **41 passed** across `test_eval_metrics.py`, `test_ablation.py`, and `test_benchmark_metrics_final_answer.py`.
+- Existing positive unit-equivalence cases remain valid, including `1024kB` / `1 MB`; complete signed and decimal values still match.
+- The CLI tests use temporary dataset/report paths. Historical result JSON files and benchmark data were not overwritten.
+
+The statistical helper now honors `alpha`, preserves observed means/differences, and rejects non-finite or out-of-range inputs. New JSON results use `ci_upper_bound` plus `confidence_level` instead of the fixed-name `ci_95_upper_bound`, and `z_stat` instead of the misleading `t_stat`. The report handles unavailable estimates explicitly. Old result artifacts are unchanged.
+
+**Remaining limits, not fixed by this batch:**
+- The normal approximation assumes independent observations and adequate sample behavior. Repeated executions of the same question are correlated; this is an exploratory diagnostic, not a validated non-inferiority study.
+- A pipeline L1 pass or a correct refusal is a self-check signal, not independent groundedness scoring. Value presence alone does not establish that a claim is true or attached to the correct setting.
+- The primary baseline's `overall_accuracy_pct` measures answer/refusal decisions, not complete factual correctness; its temperature metadata and exception-safe restoration of temporary settings still need correction.
+- Legacy threshold/follow-up runners, cache-hit citation scoring, complete token accounting, pricing assumptions, and architectural-comparator claims still require review or remeasurement.
+- Fresh development-only measurements are required before subsequent behavioral repairs. No new accuracy, latency, cost-saving, or generalization claim is established here.
+
 ---
 
 ## Milestone 4: Day 4 Guardrails & Abstention Benchmarks

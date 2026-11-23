@@ -173,8 +173,8 @@ def check_value_accuracy(
     expected_value: Optional[str],
 ) -> bool:
     """
-    Checks if expected_value (or any unit-equivalent representation)
-    is present in the generated answer.
+    Checks for a complete value token (or unit-equivalent representation),
+    excluding citation IDs. Presence alone does not establish factual correctness.
     Returns True if expected_value is None (unspecified) or if a valid match is found.
     """
     if expected_value is None:
@@ -200,16 +200,13 @@ def check_value_accuracy(
     if exp_str in NUMBER_WORD_MAP:
         variants.add(NUMBER_WORD_MAP[exp_str])
 
-    answer_lower = answer.lower()
+    answer_lower = re.sub(r"\[\^[^\]]+\]", "", answer.lower())
     for v in variants:
         v_clean = v.strip()
         if not v_clean:
             continue
-        # Check direct substring or word boundary match
-        pattern = r"(?:\b|\s|^)" + re.escape(v_clean) + r"(?:\b|\s|$)"
+        pattern = r"(?<![\w.+-])" + re.escape(v_clean) + r"(?![\w+-]|[.,]\d)"
         if re.search(pattern, answer_lower):
-            return True
-        if v_clean in answer_lower:
             return True
 
     return False

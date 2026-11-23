@@ -24,6 +24,8 @@ Every Day/Task strictly follows this 3-phase cadence:
 
 ## Build Tiers Overview
 
+> Checked historical milestones record implementation progress, not current certification of every capability or benchmark claim. The correctness review below takes precedence for readiness.
+
 ### Tier 1: Measure First (Baseline Pipeline & Corpus Ingestion)
 - [x] Day 0: Tooling installs (pinned uv/Python, Docker Compose, Git init, .env validation)
 - [x] Day 1: Versioned PostgreSQL Documentation parser & chunker with SHA-256 hashes
@@ -54,9 +56,12 @@ Every Day/Task strictly follows this 3-phase cadence:
 - [x] Configure image-compatible health checks, frozen dependency installation, committed-corpus indexing, and Neo4j schema initialization before CI tests.
 - [x] Validate the frozen Windows environment and collect all 248 tests without changing application logic or dependency versions.
 - [x] Verify container startup, dependency installation, and PostgreSQL migrations in GitHub Actions; add bounded model preparation and caching after observing Hugging Face download rate limits.
-- [ ] Complete a passing Docker-backed CI run. The targeted offline checks currently report 15 passed and one existing contradiction-analysis test failure; no tests or quality thresholds were weakened.
+- [x] Complete a passing Docker-backed CI run: [run 45172813930](https://github.com/Pranav2119/EvidenceFlow/actions/runs/45172813930), commit `aa83738`, passed 249 tests and all configured metric gates, with one warning. No tests or quality thresholds were weakened.
 
 ### Interview-Readiness Correctness Review (2026-11-23)
 - [x] Repair the equal-defaults/changed-options comparison and verify seven focused regression cases locally.
-- [ ] Verify the comparison repair in the full GitHub CI suite, keeping all integration tests and metric gates enabled.
+- [x] Verify the comparison repair in the full GitHub CI suite, keeping all integration tests and metric gates enabled.
+- [x] Repair evaluator value matching, scalar/list scoring, uncached baseline controls, and unsupported statistical-success reporting; verify 41 focused local tests.
+- [ ] Publish and verify remaining repair batches in full CI after approval.
+- [ ] Record fresh development-only measurements before changing retrieval, prompts, cache, or memory mechanisms. Resolve the remaining evaluation-methodology limitations before using quality or performance numbers in a resume.
 - [ ] Resolve the remaining critical citation, cache, version-state, and evaluation findings before claiming overall interview readiness.

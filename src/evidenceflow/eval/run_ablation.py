@@ -1,7 +1,8 @@
 """
-run_ablation.py: Tier 2 Ablation Study Runner & Statistical Non-Inferiority Evaluator.
+run_ablation.py: Tier 2 Ablation Study Runner & Exploratory Quality Comparison.
 Executes 4 pipeline configurations (Baseline, +Memory, +Cache, +Both) across benchmark splits,
-computes sample distributions for Groundedness, and proves mathematical Non-Inferiority.
+recording pipeline self-checks and an approximate non-inferiority comparison.
+Repeated executions are correlated; this calculation is not statistical proof.
 
 CLI:
   uv run python -m evidenceflow.eval.run_ablation --repeats 3 --output docs/experiments.md
@@ -11,6 +12,7 @@ import argparse
 import json
 import math
 from pathlib import Path
+from statistics import NormalDist
 import subprocess
 import sys
 import time
@@ -28,70 +30,76 @@ def compute_non_inferiority_test(
     alpha: float = 0.05,
 ) -> Dict[str, Any]:
     """
-    Computes formal statistical non-inferiority test for Groundedness quality:
+    Computes an exploratory independent-sample normal approximation:
       H0: mu_baseline - mu_treatment >= delta (Treatment degrades quality by >= delta)
       H1: mu_baseline - mu_treatment < delta  (Treatment is non-inferior)
 
-    Uses one-sided 95% confidence interval bound (z_0.95 = 1.645).
+    Uses a one-sided (1 - alpha) upper confidence bound. Independent observations
+    and an adequate normal approximation are assumptions, not verified here.
+    Insufficient samples or zero estimated variance produce an inconclusive result.
     """
+    if not math.isfinite(alpha) or not 0.0 < alpha < 1.0:
+        raise ValueError("alpha must be finite and strictly between 0 and 1")
+    if not math.isfinite(delta) or not 0.0 <= delta <= 1.0:
+        raise ValueError("delta must be finite and between 0 and 1")
+    if any(
+        not math.isfinite(value) or not 0.0 <= value <= 1.0
+        for samples in (baseline_samples, treatment_samples)
+        for value in samples
+    ):
+        raise ValueError("quality samples must be finite and between 0 and 1")
+
     n1 = len(baseline_samples)
     n2 = len(treatment_samples)
-    if n1 < 2 or n2 < 2:
-        return {
-            "mean_baseline": sum(baseline_samples) / n1 if n1 else 0.0,
-            "mean_treatment": sum(treatment_samples) / n2 if n2 else 0.0,
-            "mean_diff": 0.0,
-            "standard_error": 0.0,
-            "ci_95_upper_bound": 0.0,
-            "delta_margin": delta,
-            "t_stat": 0.0,
-            "p_value": 1.0,
-            "is_non_inferior": True,
-            "verdict": "PROVEN NON-INFERIOR (Identical samples)",
-        }
-
-    m1 = sum(baseline_samples) / n1
-    m2 = sum(treatment_samples) / n2
-    diff = m1 - m2  # Degradation of treatment compared to baseline
+    m1 = sum(baseline_samples) / n1 if n1 else None
+    m2 = sum(treatment_samples) / n2 if n2 else None
+    diff = m1 - m2 if m1 is not None and m2 is not None else None
+    result: Dict[str, Any] = {
+        "mean_baseline": m1,
+        "mean_treatment": m2,
+        "mean_diff": diff,
+        "standard_error": None,
+        "ci_upper_bound": None,
+        "confidence_level": 1.0 - alpha,
+        "delta_margin": delta,
+        "alpha": alpha,
+        "z_stat": None,
+        "p_value": None,
+        "is_non_inferior": False,
+        "verdict": "INCONCLUSIVE (At least two observations per condition are required)",
+        "method": "Independent-sample normal approximation (exploratory)",
+    }
+    if n1 < 2 or n2 < 2 or m1 is None or m2 is None or diff is None:
+        return result
 
     var1 = sum((x - m1) ** 2 for x in baseline_samples) / (n1 - 1)
     var2 = sum((x - m2) ** 2 for x in treatment_samples) / (n2 - 1)
     se = math.sqrt((var1 / n1) + (var2 / n2))
+    result["standard_error"] = se
+    if se <= 1e-9:
+        result["verdict"] = "INCONCLUSIVE (Zero estimated variance cannot establish uncertainty)"
+        return result
 
-    # Critical z for alpha = 0.05 (one-sided)
-    z_crit = 1.6448536269514722
+    z_crit = -NormalDist().inv_cdf(alpha)
     ci_upper = diff + (z_crit * se)
-
-    # t-statistic testing H0: diff >= delta
-    if se > 1e-9:
-        t_stat = (delta - diff) / se
-        # Approximate standard normal CDF for p-value calculation
-        p_val = 0.5 * (1.0 + math.erf(-t_stat / math.sqrt(2.0)))
-    else:
-        t_stat = 999.0 if diff < delta else -999.0
-        p_val = 0.0001 if diff < delta else 0.9999
+    z_stat = (delta - diff) / se
+    p_val = NormalDist().cdf(-z_stat)
 
     is_non_inferior = ci_upper < delta
-
     verdict = (
-        f"PROVEN NON-INFERIOR (CI Upper {ci_upper:.4f} < Margin {delta:.4f}, p={p_val:.4f})"
+        f"APPROXIMATE CHECK PASSED (Upper bound {ci_upper:.4f} < Margin {delta:.4f}, p={p_val:.4f})"
         if is_non_inferior
-        else f"NON-INFERIORITY NOT PROVEN (CI Upper {ci_upper:.4f} >= Margin {delta:.4f}, p={p_val:.4f})"
+        else f"APPROXIMATE CHECK FAILED (Upper bound {ci_upper:.4f} >= Margin {delta:.4f}, p={p_val:.4f})"
     )
 
-    return {
-        "mean_baseline": m1,
-        "mean_treatment": m2,
-        "mean_diff": diff,
-        "standard_error": se,
-        "ci_95_upper_bound": ci_upper,
-        "delta_margin": delta,
-        "alpha": alpha,
-        "t_stat": t_stat,
+    result.update({
+        "ci_upper_bound": ci_upper,
+        "z_stat": z_stat,
         "p_value": p_val,
         "is_non_inferior": is_non_inferior,
         "verdict": verdict,
-    }
+    })
+    return result
 
 
 def format_ablation_markdown_report(
@@ -119,15 +127,26 @@ def format_ablation_markdown_report(
         if baseline["cost_per_1k_usd"] > 0 else 0.0
     )
 
+    def format_stat(key: str, scale: float = 1.0, suffix: str = "") -> str:
+        value = stats[key]
+        return "N/A" if value is None else f"{value * scale:.4f}{suffix}"
+
     md = []
     md.append(f"\n## Milestone 9: Day 13 Tier 2 Ablation Study & Non-Inferiority Analysis\n")
     md.append(f"- **Git Commit**: `{git_commit}`")
     md.append(f"- **Dataset Split**: `{dataset_name}` ({results[0]['total_executions'] // repeats} questions x {repeats} repeats = {results[0]['total_executions']} runs/condition)")
-    md.append(f"- **Non-Inferiority Margin ($\\Delta$)**: `{stats['delta_margin'] * 100.0:.1f}%` (Significance Level $\\alpha = 0.05$)")
+    md.append(f"- **Non-Inferiority Margin ($\\Delta$)**: `{stats['delta_margin'] * 100.0:.3g} percentage points` (Significance Level $\\alpha = {stats['alpha']:g}$)")
     md.append(f"- **Evaluated Conditions**: Baseline, +Memory, +Cache, +Both (Full EvidenceFlow)\n")
+    md.append(
+        "**Exploratory results, not statistical proof.** Repeated executions of the same "
+        "question are correlated, while this approximation assumes independent observations. "
+        "The quality signal is the pipeline's L1 self-check (or an expected refusal), "
+        "not independent evidence that every claim is supported. Token totals cover recorded "
+        "audit steps; costs use the coded token-price estimates, not measured billing.\n"
+    )
 
     md.append("### 1. Multi-Condition Performance & Cost Comparison Table\n")
-    md.append("| Experimental Condition | Accuracy (%) | Groundedness (%) | Median Latency (p50) | Tail Latency (p95) | Tokens / Query | Cost / 1k Queries | Cache Hit Rate |")
+    md.append("| Experimental Condition | Answer Checks (%) | Self-Check / Correct Refusal (%) | Median Latency (p50) | Tail Latency (p95) | Recorded Tokens / Query | Estimated Cost / 1k Queries | Cache Hit Rate |")
     md.append("| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |")
 
     for r in results:
@@ -144,40 +163,40 @@ def format_ablation_markdown_report(
 
     md.append("\n### 2. Efficiency Gains vs. Baseline\n")
     md.append(f"- **Latency Reduction (p50)**: **{latency_speedup:.1f}%** faster ({baseline['p50_latency_ms']:.1f}ms $\\rightarrow$ {full_both['p50_latency_ms']:.1f}ms)")
-    if cache_only['cached_p50_latency_ms'] > 0:
+    if cache_only['cached_p50_latency_ms'] > 0 and baseline['p50_latency_ms'] > 0:
         cached_speedup = ((baseline['p50_latency_ms'] - cache_only['cached_p50_latency_ms']) / baseline['p50_latency_ms']) * 100.0
         md.append(f"- **Cached Pure Hit Speedup**: **{cached_speedup:.1f}%** reduction ({cache_only['cached_p50_latency_ms']:.2f}ms on verified cache hit)")
     md.append(f"- **Token Usage Reduction**: **{token_reduction:.1f}%** fewer tokens per query ({baseline['tokens_per_query']:.0f} $\\rightarrow$ {full_both['tokens_per_query']:.0f} tokens)")
-    md.append(f"- **Inference Cost Savings**: **{cost_reduction:.1f}%** lower operational cost per 1,000 queries")
+    md.append(f"- **Token-Price Estimate Reduction**: **{cost_reduction:.1f}%** per 1,000 queries (not billed cost savings)")
 
-    md.append("\n### 3. Statistical Non-Inferiority Verification\n")
-    md.append(f"- **Null Hypothesis ($H_0$)**: $\\mu_{{\\text{{baseline}}}} - \\mu_{{\\text{{+Both}}}} \\ge {stats['delta_margin']:.3f}$ (Groundedness degrades by $\\ge 2.0\\%$)")
-    md.append(f"- **Alternative Hypothesis ($H_1$)**: $\\mu_{{\\text{{baseline}}}} - \\mu_{{\\text{{+Both}}}} < {stats['delta_margin']:.3f}$ (Non-inferior)")
-    md.append(f"- **Mean Groundedness (Baseline)**: `{stats['mean_baseline'] * 100.0:.2f}%`")
-    md.append(f"- **Mean Groundedness (+Both)**: `{stats['mean_treatment'] * 100.0:.2f}%`")
-    md.append(f"- **Mean Difference ($\\bar{{d}}$)**: `{stats['mean_diff'] * 100.0:.4f}%`")
-    md.append(f"- **Standard Error ($SE$)**: `{stats['standard_error']:.4f}`")
-    md.append(f"- **95% Confidence Interval Upper Bound**: `{stats['ci_95_upper_bound'] * 100.0:.3f}%`")
-    md.append(f"- **Statistical Decision**: **{stats['verdict']}**\n")
+    md.append("\n### 3. Exploratory Non-Inferiority Check\n")
+    md.append(f"- **Null Hypothesis ($H_0$)**: $\\mu_{{\\text{{baseline}}}} - \\mu_{{\\text{{+Both}}}} \\ge {stats['delta_margin']:.6g}$")
+    md.append(f"- **Alternative Hypothesis ($H_1$)**: $\\mu_{{\\text{{baseline}}}} - \\mu_{{\\text{{+Both}}}} < {stats['delta_margin']:.6g}$")
+    md.append(f"- **Mean Self-Check Score (Baseline)**: `{format_stat('mean_baseline', 100.0, '%')}`")
+    md.append(f"- **Mean Self-Check Score (+Both)**: `{format_stat('mean_treatment', 100.0, '%')}`")
+    md.append(f"- **Mean Difference ($\\bar{{d}}$)**: `{format_stat('mean_diff', 100.0, ' percentage points')}`")
+    md.append(f"- **Standard Error ($SE$)**: `{format_stat('standard_error')}`")
+    md.append(f"- **Approximate {stats['confidence_level'] * 100.0:g}% Upper Confidence Bound**: `{format_stat('ci_upper_bound', 100.0, ' percentage points')}`")
+    md.append(f"- **Exploratory Decision**: **{stats['verdict']}**\n")
     md.append("---\n")
 
     return "\n".join(md)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Run 4-condition Tier 2 ablation study with statistical non-inferiority testing.")
+    parser = argparse.ArgumentParser(description="Run 4-condition Tier 2 ablation study with an exploratory quality comparison.")
     parser.add_argument("--repeats", type=int, default=3, help="Number of repetitions per condition (default 3)")
     parser.add_argument("--output", type=str, default="docs/experiments.md", help="Output Markdown ledger path")
     parser.add_argument("--dataset", type=str, default="data/benchmarks/benchmark_dev_40.json", help="Path to evaluation dataset")
-    parser.add_argument("--subset", type=int, default=10, help="Number of benchmark questions (default 10, yields 30 samples/condition with 3 repeats)")
+    parser.add_argument("--subset", type=int, default=10, help="Number of benchmark questions (default 10; repeats are not independent samples)")
     parser.add_argument("--delay", type=float, default=0.0, help="Pacing delay between queries in seconds")
     parser.add_argument("--delta", type=float, default=0.02, help="Non-inferiority delta margin (default 0.02 = 2.0%)")
-    parser.add_argument("--break-it", action="store_true", help="Break It on Purpose demonstration: sets delta=0.0000001 to prove rejection under impossible margin")
+    parser.add_argument("--break-it", action="store_true", help="Use a strict delta=0.0000001 margin; this does not guarantee rejection or suppress a failure exit")
     args = parser.parse_args()
 
     if args.break_it:
         args.delta = 0.0000001
-        print("\n[BREAK-IT MODE] Demonstrating rejection under impossible non-inferiority margin delta = 0.0000001\n")
+        print("\n[BREAK-IT MODE] Applying strict non-inferiority margin delta = 0.0000001\n")
 
     # Load dataset
     repo_root = Path(__file__).resolve().parents[3]
@@ -249,10 +268,9 @@ def main():
 
         # Append to output file (docs/experiments.md)
         out_path = repo_root / args.output
-        if out_path.exists():
-            with open(out_path, "a", encoding="utf-8") as f:
-                f.write("\n" + md_report + "\n")
-            print(f"[SUCCESS] Appended ablation results to '{out_path}'.")
+        with open(out_path, "a", encoding="utf-8") as f:
+            f.write("\n" + md_report + "\n")
+        print(f"[SUCCESS] Appended ablation results to '{out_path}'.")
 
         # Save JSON artifact
         json_artifact_path = repo_root / "data/benchmarks/ablation_tier2_results.json"
@@ -275,11 +293,10 @@ def main():
 
         if not stats["is_non_inferior"]:
             print(f"[ALERT] Non-inferiority test: {stats['verdict']}")
-            if not args.break_it:
-                sys.exit(1)
+            sys.exit(1)
 
         print("=" * 85)
-        print(" TIER 2 ABLATION STUDY & NON-INFERIORITY PROOF COMPLETED SUCCESSFULLY")
+        print(" TIER 2 ABLATION STUDY COMPLETED; EXPLORATORY CHECK PASSED (NOT STATISTICAL PROOF)")
         print("=" * 85)
 
     finally:
