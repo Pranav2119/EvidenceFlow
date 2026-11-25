@@ -4,6 +4,10 @@ Verifies zero-division protection, dual ground-truth matching, unit-equivalence 
 and error classification.
 """
 
+import hashlib
+import json
+from pathlib import Path
+
 import pytest
 from evidenceflow.eval.metrics import (
     matches_ground_truth_passage,
@@ -171,3 +175,37 @@ def test_error_classification():
     assert not is_wrong_answer(should_abstain=True, is_abstained=True)
     assert is_wrong_answer(should_abstain=True, is_abstained=False)  # Wrong Answer!
     assert not is_wrong_refusal(should_abstain=True, is_abstained=False)
+
+
+def test_dataset_fingerprint_tracks_labels_not_object_key_order():
+    from evidenceflow.eval.metrics import get_dataset_metadata
+
+    original = {"version": "1.1", "questions": [{"id": "q1", "expected_value": "1"}]}
+    reordered = {"questions": [{"expected_value": "1", "id": "q1"}], "version": "1.1"}
+    changed = {"version": "1.1", "questions": [{"id": "q1", "expected_value": "-1"}]}
+
+    assert get_dataset_metadata(original) == get_dataset_metadata(reordered)
+    assert get_dataset_metadata(original)["dataset_sha256"] != get_dataset_metadata(changed)["dataset_sha256"]
+
+
+def test_development_answerable_labels_have_exact_same_version_evidence():
+    root = Path(__file__).resolve().parents[1]
+    dataset = json.loads((root / "data" / "benchmarks" / "benchmark_dev_40.json").read_text(encoding="utf-8"))
+    with (root / "data" / "processed" / "chunks.jsonl").open(encoding="utf-8") as source:
+        corpus = {passage["id"]: passage for passage in map(json.loads, source)}
+
+    for question in dataset["questions"]:
+        if question["should_abstain"]:
+            assert question["expected_value"] is None, question["id"]
+            assert question["ground_truth_chunks"] == [], question["id"]
+            continue
+
+        quote = question.get("ground_truth_quote")
+        assert quote and quote.strip(), f"{question['id']} lacks a reviewed support quote"
+        passages = [corpus[chunk_id] for chunk_id in question["ground_truth_chunks"]]
+        assert passages, question["id"]
+        assert all(passage["version"] == question["version"] for passage in passages), question["id"]
+        assert any(quote in passage["content"] for passage in passages), question["id"]
+        assert check_value_accuracy(quote, question["expected_value"]), question["id"]
+        for passage in passages:
+            assert hashlib.sha256(passage["content"].encode("utf-8")).hexdigest() == passage["sha256"], question["id"]

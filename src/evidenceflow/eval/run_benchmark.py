@@ -26,6 +26,7 @@ from evidenceflow.config import get_settings
 from evidenceflow.graph.workflow import run_pipeline
 from evidenceflow.state import EvidenceFlowState
 from evidenceflow.eval.metrics import (
+    get_dataset_metadata,
     calculate_recall_at_k,
     calculate_reciprocal_rank,
     calculate_citation_precision,
@@ -124,6 +125,7 @@ def run_benchmark(
         file_path = Path("data/benchmarks/benchmark_dev_40.json")
 
     data = load_benchmark_dataset(file_path)
+    dataset_metadata = get_dataset_metadata(data)
     questions = data.get("questions", [])
     if not questions:
         raise ValueError("Benchmark dataset must contain questions")
@@ -133,6 +135,8 @@ def run_benchmark(
     print(f" EvidenceFlow AI — Evaluation Benchmark ({split.upper()} Split)")
     print("=" * 76)
     print(f"Dataset File:     {file_path.name} ({total_q} questions)")
+    print(f"Dataset Version:  {dataset_metadata['dataset_version']}")
+    print(f"Dataset SHA-256:  {dataset_metadata['dataset_sha256']} (sorted compact JSON)")
     print(f"Gemini Mode:      {'ON (Live LLM)' if gemini_enabled else 'OFF (Deterministic Fallback)'}")
     print(f"Memory Mode:      {'ON (Neo4j Conversational Memory)' if enable_memory else 'OFF (Direct Single-Turn)'}")
     print("Cache Mode:       OFF (Uncached baseline)")
@@ -371,6 +375,7 @@ def run_benchmark(
     summary = {
         "split": split,
         "dataset_file": file_path.name,
+        **dataset_metadata,
         "git_commit": get_git_commit_hash(),
         "embedding_provider": settings.EMBEDDING_PROVIDER,
         "embedding_model": settings.GEMINI_EMBEDDING_MODEL if settings.EMBEDDING_PROVIDER == "gemini" else "BAAI/bge-small-en-v1.5",

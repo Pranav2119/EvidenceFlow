@@ -2,6 +2,8 @@
 
 This document defines the comprehensive evaluation methodology for **EvidenceFlow AI**. It specifies dataset construction from ground-truth release notes, strict train/dev/test splits, component-level metrics, the 4-way ablation framework, non-inferiority statistical tests, CI regression thresholds, and an adversarial failure-test catalogue.
 
+> This is a design target, not a record of completed measurements. The implemented 40-question development dataset and its v1.1 source-support audit are documented in the [experiment ledger](../experiments.md#development-label-audit-v11-2026-11-25); that audit takes precedence for current labels.
+
 ---
 
 ## 1. Metric & Terminology Glossary (Plain English)
@@ -36,15 +38,15 @@ Benchmark Dataset (120 Scenarios)
 ```
 
 #### 1. Versioned Parameter Questions (Deterministic Ground Truth)
-- **Source**: PostgreSQL release notes documenting explicit changes (e.g., `vacuum_cost_limit` changed from 200 in PG 14 to 10,000 in PG 16; `wal_compression` added `zstd` support in PG 14).
+- **Source**: PostgreSQL release notes and version-matched runtime documentation. A verified example in the indexed corpus is `log_checkpoints`: default `off` in PostgreSQL 14 and `on` in 15. `vacuum_cost_limit` instead defaults to `200` in both 14 and 16; it is not evidence of a changed default.
 - **Ground Truth Format**:
   ```json
   {
     "id": "param-001",
-    "query": "What is the default value of vacuum_cost_limit in PostgreSQL 16?",
-    "version_scope": ["16"],
-    "ground_truth_answer": "10000",
-    "ground_truth_passages": ["pg16_runtime_config_resource_chunk_042"],
+    "query": "What is the default value of log_checkpoints in PostgreSQL 15?",
+    "version_scope": ["15"],
+    "ground_truth_answer": "on",
+    "ground_truth_passages": ["pg15-runtime-config-logging-log-checkpoints"],
     "type": "versioned_fact"
   }
   ```

@@ -216,7 +216,7 @@ def test_ablation_cli_reports_inconclusive_without_success_exit(
     tmp_path, monkeypatch, capsys, condition_result, break_it,
 ):
     dataset = tmp_path / "synthetic.json"
-    dataset.write_text(json.dumps({"questions": [{"id": "synthetic", "query": "Synthetic question"}]}), encoding="utf-8")
+    dataset.write_text(json.dumps({"version": "synthetic-v1", "questions": [{"id": "synthetic", "query": "Synthetic question"}]}), encoding="utf-8")
     report = tmp_path / "report.md"
     (tmp_path / "data" / "benchmarks").mkdir(parents=True)
     monkeypatch.setattr(ablation, "__file__", str(tmp_path / "src" / "evidenceflow" / "eval" / "run_ablation.py"))
@@ -238,3 +238,7 @@ def test_ablation_cli_reports_inconclusive_without_success_exit(
     assert exc.value.code == 1
     assert "INCONCLUSIVE" in report.read_text(encoding="utf-8")
     assert "PROOF COMPLETED SUCCESSFULLY" not in capsys.readouterr().out
+    saved = json.loads((tmp_path / "data" / "benchmarks" / "ablation_tier2_results.json").read_text(encoding="utf-8"))
+    assert saved["dataset_version"] == "synthetic-v1"
+    assert len(saved["dataset_sha256"]) == 64
+    assert saved["dataset_sha256"] in report.read_text(encoding="utf-8")

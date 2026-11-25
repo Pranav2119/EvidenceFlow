@@ -4,6 +4,86 @@ This document tracks all empirical evaluation runs, benchmark datasets, ablation
 
 > **Validity notice:** Historical entries below are preserved as records, not re-certified results. Review found cache-contaminated baseline calls, incorrect value scoring, and unsupported non-inferiority success claims. Do not use those historical comparisons as current resume evidence until the affected runs and methods have been revalidated.
 
+## Development Label Audit v1.1 (2026-11-25)
+
+**This is an evidence/label correction, not an application improvement.** All 40 question texts, order, requested versions, corpus passages, and saved baseline outputs are unchanged. Only `d22` and `d25` change scoring labels. The original [v1.0 dataset at d07d1b2](https://github.com/Pranav2119/EvidenceFlow/blob/d07d1b25cb450f578b6319a55dba64a650df74d1/data/benchmarks/benchmark_dev_40.json) and [first baseline JSON](../data/benchmarks/baseline_dev_ci_45217948535.json) remain available.
+
+### Audit Method and Evidence
+
+Reviewed all 26 originally answerable labels against their same-version gold passages, checking IDs and content hashes and reading the default statements in context. Of these, 22 have explicit defaults, two have explicitly qualified typical defaults, and two lack support for the requested default. All 24 retained answerable labels now carry an exact `ground_truth_quote` in the [v1.1 dataset](../data/benchmarks/benchmark_dev_40.json). A quote match verifies text integrity, not semantic entailment; the supporting relationship was manually reviewed.
+
+| Cases | Setting / requested version | Reviewed expected value | Indexed corpus lines |
+| :--- | :--- | :--- | :--- |
+| `d01`, `d02` | `vacuum_cost_limit`, 16 / 14 | `200` in both versions | 1530 / 491 |
+| `d03` | `shared_buffers`, 15 | Typically `128MB`; may be lower at initdb | 971 |
+| `d04` | `work_mem`, 14 | Per-operation memory before temporary files; `4MB` | 476 |
+| `d05` | `maintenance_work_mem`, 16 | `64MB` | 1515 |
+| `d06`, `d07` | `vacuum_cost_delay`, 16 / 14 | `0` (zero) | 1526 / 487 |
+| `d08` | `autovacuum_vacuum_cost_limit`, 16 | `-1`, inheriting the regular vacuum cost limit | 1267 |
+| `d09` | `wal_level`, 16 | `replica` | 1544 |
+| `d10` | `max_wal_size`, 15 | `1GB` | 1024 |
+| `d11` | `min_wal_size`, 14 | `80MB` | 525 |
+| `d12` | `checkpoint_timeout`, 16 | Maximum interval between automatic WAL checkpoints; `5min` | 1559 |
+| `d13` | `checkpoint_completion_target`, 14 | `0.9` | 521 |
+| `d14` | `max_connections`, 16 | Typically `100`; may be lower at initdb | 1319 |
+| `d15` | `deadlock_timeout`, 14 | `1s` | 356 |
+| `d16` | `lock_timeout`, 15 | `0` (zero disables timeout) | 757 |
+| `d17`, `d18` | `log_checkpoints`, 14 / 15 | `off` / `on` | 384 / 883 |
+| `d19` | `log_connections`, 16 | `off` | 1420 |
+| `d20` | `autovacuum_max_workers`, 14 | `3` (three) | 231 |
+| `d21` | `autovacuum_naptime`, 16 | `1min` | 1257 |
+| `d23` | `vacuum_buffer_usage_limit`, 16 | `256kB` | 1517 |
+| `d24` | `ignore_checksum_failure`, 16 | `off` | 1378 |
+| `d26` | `track_commit_timestamp`, 16 | `off` | 1491 |
+
+Line references identify the unchanged [indexed corpus](../data/processed/chunks.jsonl), whose LF-normalized SHA-256 is `fecc8fcb7f0202af65e6caef396cc234a81c3733d7a7ed446eed90dd14377f9b`. `d03` and `d14` retain the kernel/initdb caveats in their quotes and notes. The saved baseline answers already include those caveats; the numeric presence metric alone cannot enforce them.
+
+### Two Corpus-Relative Label Corrections
+
+- **`d22`, `archive_mode` in 16:** the named passage at line 1565 lists `off` as an option, not the default. The other two indexed v16 references mentioning `archive_mode` are `wal_level` (1544) and `archive_command` (1566); neither establishes the default. The question asks for both behavior and a default, so a fully supported answer is not available under this corpus's all-or-abstain contract.
+- **`d25`, `ignore_system_indexes` in 14:** its only indexed v14 named reference, line 332, describes behavior without stating a default. Boolean type is not evidence for a default of `off`.
+- Both now use category `insufficient_evidence`, `should_abstain=true`, `expected_value=null`, empty answer-support IDs/matcher, and expected code `NO_SUBSTANTIVE_EVIDENCE`. Their notes retain the inspected references and rationale. This does not assert that the real PostgreSQL defaults are unknown; it states that the indexed evidence does not establish them.
+- No new sources were added, and no prompt, retriever, writer, verifier, cache, or memory logic was changed to make the outputs match the new labels.
+
+### Original Refusal Labels
+
+All 14 original refusal decisions remain unchanged:
+- `d27`-`d30`: four instruction-override/exfiltration attempts, not technical requests to fulfill.
+- `d31`-`d35`: five named settings absent from all indexed versions; their names were searched as whole identifiers.
+- `d36` / `d37`: versions 17 / 12 are outside the indexed set `{14, 15, 16}`, not nonexistent PostgreSQL releases.
+- `d38`: `vacuum_buffer_usage_limit` has indexed references only in 16, not the requested 14.
+- `d39` / `d40`: recipe and MongoDB requests are outside this PostgreSQL corpus's supported domain.
+
+The saved baseline refused `d30` and `d40` with `NO_SUBSTANTIVE_EVIDENCE`, not the expected `INJECTION` / `OUT_OF_SCOPE`. Their intended labels were not changed to match the implementation. Decision agreement does not prove early input-guard detection; those routing gaps remain open.
+
+### Dataset Identity and Label-Only Rescore
+
+New baseline and ablation outputs use a shared metadata helper. `dataset_sha256` is SHA-256 of `json.dumps(dataset, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False).encode("utf-8")`. It identifies the full parsed dataset, including notes and quotes, independent of JSON whitespace or object-key order. The ablation fingerprint describes the full input dataset before any subset selection. Unversioned legacy input reports `dataset_version=null`, not an invented revision.
+
+| Dataset revision | Sorted compact JSON SHA-256 |
+| :--- | :--- |
+| v1.0, recovered from `d07d1b2` | `bf34fc744ba2de1e4ee31bae99d1d93f53a332a6394933ced7303c6552df198f` |
+| v1.1, audited | `1274d3fdd110da2987f51cd9d890f82a74941bb59955c54b8ff42900dd7316dd` |
+
+Rescored the **same saved last-repeat outputs** from `b84c649`; no pipeline, database, or LLM execution was used:
+
+| Measurement | Original v1.0 labels | Audited v1.1 labels |
+| :--- | :--- | :--- |
+| Labeled answerable / refusal cases | 26 / 14 | 24 / 16 |
+| Answer/refusal decision agreement | 36/40 = 90.00% | 38/40 = 95.00% |
+| Answers containing expected values | 22/26 = 84.62% | 22/24 = 91.67% |
+| Wrong-refusal IDs | `d01`, `d02`, `d22`, `d25` | `d01`, `d02` |
+| Unexpected answers on refusal cases | 0 | 0 |
+
+The five-percentage-point decision difference comes entirely from corrected labels. The 22 value-containing answers are identical; only their denominator changes. Original all-call median/P95 remain 43.9/100.1 ms. **None of these changes is evidence of better generation, retrieval, safety, or speed.** The original report's LF-normalized SHA-256 remains `fb5628b72d8031e93b630d9963d12b5830d8b76a78aaf175e45362a8d920bd78`.
+
+### Validation and Remaining Work
+
+- Before implementation: five new/strengthened checks failed and 45 passed. After correction: **50 focused evaluation tests passed**.
+- Checks cover dataset key-order invariance versus label-change sensitivity, report identity in both runners, and nonempty exact support quotes with version/value/hash consistency. A dataset-only comparison confirms all 40 queries/scopes are preserved and only `d22` / `d25` scoring labels changed.
+- Full CI verification of this patch is pending publication. The frozen split and the user-shared read-only snapshot were not opened or edited.
+- Next behavior work remains the measured `vacuum_cost_limit` selection/binding issue and previously identified citation/cache/version-state problems. Qualifier completeness, reason-code scoring, fuzzy gold matching, and full semantic correctness are not certified by this audit.
+
 ## Baseline DEV-CI-45217948535 (2026-11-23)
 
 **Status: captured and internally validated; diagnostic results against current labels, not factual-quality certification.** Two inspected gold passages do not substantiate their expected defaults. The dataset was not relabeled, and the scores below were not adjusted to hide this limitation.

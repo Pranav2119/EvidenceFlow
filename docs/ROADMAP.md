@@ -66,6 +66,7 @@ Every Day/Task strictly follows this 3-phase cadence:
 - [x] Prepare development-only CI capture with per-repeat evidence records, observed-cache-hit rejection, honest metric labels, and failure-safe temporary settings; verify 47 focused local tests.
 - [ ] Publish and verify remaining repair batches in full CI after approval.
 - [x] Record the first fresh offline development baseline before RAG behavior changes: [run 45217948535](https://github.com/Pranav2119/EvidenceFlow/actions/runs/45217948535), 40 cases / 120 timed observations, with the original JSON retained and 281 full-suite tests passing.
-- [ ] Audit development ground-truth support, including the `d22` / `d25` default-value labels, before treating label-based scores as factual quality.
+- [x] Audit all 40 development labels against indexed evidence/scope; revise to v1.1 with 24 supported answers and 16 refusals, preserving queries and the v1.0 baseline. Record exact support quotes, qualified defaults, and the label-only rescore; 50 focused tests pass locally.
+- [ ] Verify the v1.1 label/provenance patch in full CI after approval. Label corrections do not establish factual answer quality or application improvement.
 - [ ] Resolve remaining evaluation-methodology limitations before resume quality/performance claims; establish a separately controlled Gemini-enabled baseline before prompt or generation changes.
 - [ ] Resolve the remaining critical citation, cache, version-state, and evaluation findings before claiming overall interview readiness.

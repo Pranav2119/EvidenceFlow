@@ -7,6 +7,7 @@ Verifies:
 """
 
 import json
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -204,3 +205,25 @@ def test_baseline_rejects_empty_datasets(isolated_baseline, monkeypatch):
             gemini_enabled=False, repeats=1, delay_seconds=0.0, verbose=False,
         )
     isolated_baseline.assert_not_called()
+
+
+def test_baseline_report_identifies_label_changes_at_the_same_path(isolated_baseline):
+    dataset = benchmark.load_benchmark_dataset(Path("synthetic.json"))
+    dataset["version"] = "synthetic-v1"
+    before = benchmark.run_benchmark(
+        gemini_enabled=False, repeats=1, delay_seconds=0.0, verbose=False,
+    )
+    dataset["questions"][0]["should_abstain"] = True
+    after_label_change = benchmark.run_benchmark(
+        gemini_enabled=False, repeats=1, delay_seconds=0.0, verbose=False,
+    )
+    dataset["version"] = "synthetic-v2"
+    after_revision = benchmark.run_benchmark(
+        gemini_enabled=False, repeats=1, delay_seconds=0.0, verbose=False,
+    )
+
+    assert before["dataset_version"] == "synthetic-v1"
+    assert after_revision["dataset_version"] == "synthetic-v2"
+    assert before["dataset_file"] == after_revision["dataset_file"]
+    assert before["dataset_sha256"] != after_label_change["dataset_sha256"]
+    assert after_label_change["dataset_sha256"] != after_revision["dataset_sha256"]

@@ -1174,3 +1174,37 @@ Calling proprietary LLMs inside CI builds introduces cost, rate-limiting, and ne
 - No returned draft text, ordered retrieval IDs, or refusal decisions changed across the three timed repeats. Repetition of the same questions is still not independent statistical evidence.
 - Existing Qdrant compatibility and pool-shutdown warnings remain. Source, prompts, corpus, cache/memory behavior, and original dataset labels were not changed after observing this baseline.
 - Rewrite in my own words: why 100% retrieval recall can coexist with refusals, why label/evidence support must be audited, and why changing labels must not masquerade as an application improvement.
+
+---
+
+## Session 22: Auditing Development Ground Truth (Draft for Author Review)
+
+**Date:** 2026-11-25
+
+### Concept and Scope
+- Ground truth is the expected answer plus evidence for that answer, not merely a familiar value. An allowed option (`archive_mode=off`) does not establish that it is the default.
+- Reviewed all 40 development labels against the committed corpus and supported domain, not against what the model happened to output. Preserved the original baseline, question texts, corpus, and frozen split.
+- All 26 originally answerable gold IDs, versions, and content hashes were valid. However, only 24 expected answers were supported: 22 explicit defaults and two typical defaults that require caveats.
+
+### Evidence-Based Corrections
+- `d22` has three indexed v16 references mentioning `archive_mode`; none establishes its default. `d25` has one indexed v14 reference mentioning `ignore_system_indexes`, and it also omits the default. With approval, dataset v1.1 labels these questions for abstention instead of rewarding unsupported answers.
+- The other 24 answerable cases now include exact `ground_truth_quote` text. For `shared_buffers` and `max_connections`, the quote says "typically" and explains that initdb may choose a lower value because of kernel settings. Those caveats must not disappear from a defensible answer.
+- The original 14 refusal labels remain justified by instruction-override attempts, absent settings/versions, or domain scope. `d30` and `d40` still expose wrong-stage refusals in the saved baseline; their ideal reason codes were not relaxed to fit the implementation.
+- Added shared dataset identity metadata to the baseline and ablation reports. The hash ignores formatting/key order but changes with labels, quotes, notes, or question order, so two revisions with the same filename cannot silently look identical.
+
+### Measured Label Effect, Not a Model Gain
+- Reused the original saved outputs without calling the pipeline: decision agreement becomes 38/40 (95%) instead of 36/40 (90%) solely from the two corrected labels.
+- The count of value-containing answers stays **22**. Its percentage changes from 22/26 to 22/24 because the answerable cohort shrinks. Original latency observations remain unchanged.
+- Original dataset v1.0 remains in Git at `d07d1b2`; the original JSON fingerprint still matches. No historical result was rewritten and the read-only attachment was not touched.
+
+### Tests, Trade-offs, and Next Step
+- Five new/strengthened provenance/evidence checks failed before implementation, with 45 passing. After implementation, all **50 focused evaluation tests passed**.
+- Quote existence and hash checks detect missing/stale/mis-scoped text, not semantic truth. The support judgment was manual and must be revisited if the corpus changes.
+- Kept the existing scorers and answering pipeline unchanged; no dependencies, services, or source documents were added. Full CI publication remains pending at this entry.
+- Corrected the evaluation-plan example to the verified `log_checkpoints` off/on version difference, rather than the unsupported `vacuum_cost_limit=10000` illustration.
+- Next: publish after approval, verify CI, then repair the measured selection/binding and safety issues against v1.1 without conflating label changes with application changes.
+
+### Explain Back and Shutdown
+- Why does correcting two labels increase decision agreement even though no answer changed?
+- Why is an exact quote containing `off` insufficient to prove that `off` is the default?
+- No application/database services were started locally. The temporary test files are managed by pytest; original development services and volumes were left alone.

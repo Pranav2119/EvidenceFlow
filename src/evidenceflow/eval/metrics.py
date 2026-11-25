@@ -4,9 +4,25 @@ Computes IR ranking metrics, guardrail error rates, citation entailment, and val
 Enforces zero-division guards on all ratio calculations.
 """
 
+import hashlib
+import json
 import re
 from typing import Any, Dict, List, Optional, Set
 from evidenceflow.graph.nodes.verifier import get_equivalent_quantities
+
+
+def get_dataset_metadata(dataset: Dict[str, Any]) -> Dict[str, Optional[str]]:
+    """Identify parsed dataset content, ignoring JSON layout and object key order."""
+    version = dataset.get("version")
+    if version is not None and not isinstance(version, str):
+        raise ValueError("Benchmark dataset version must be a string")
+    canonical = json.dumps(
+        dataset, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False,
+    ).encode("utf-8")
+    return {
+        "dataset_version": version,
+        "dataset_sha256": hashlib.sha256(canonical).hexdigest(),
+    }
 
 
 def matches_ground_truth_passage(

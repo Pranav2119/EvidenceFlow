@@ -19,6 +19,7 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from evidenceflow.eval.ablation_runner import CONDITIONS, run_condition_evaluation
+from evidenceflow.eval.metrics import get_dataset_metadata
 from evidenceflow.memory.connection import close_neo4j_driver
 from evidenceflow.storage.ledger import close_connection_pool
 
@@ -108,6 +109,7 @@ def format_ablation_markdown_report(
     git_commit: str,
     dataset_name: str,
     repeats: int,
+    dataset_metadata: Optional[Dict[str, Optional[str]]] = None,
 ) -> str:
     """Formats ablation results into standard GitHub Markdown tables."""
     baseline = next((r for r in results if r["condition"] == "Baseline"), results[0])
@@ -135,6 +137,9 @@ def format_ablation_markdown_report(
     md.append(f"\n## Milestone 9: Day 13 Tier 2 Ablation Study & Non-Inferiority Analysis\n")
     md.append(f"- **Git Commit**: `{git_commit}`")
     md.append(f"- **Dataset Split**: `{dataset_name}` ({results[0]['total_executions'] // repeats} questions x {repeats} repeats = {results[0]['total_executions']} runs/condition)")
+    if dataset_metadata is not None:
+        md.append(f"- **Dataset Version**: `{dataset_metadata['dataset_version']}`")
+        md.append(f"- **Dataset SHA-256 (sorted compact JSON)**: `{dataset_metadata['dataset_sha256']}`")
     md.append(f"- **Non-Inferiority Margin ($\\Delta$)**: `{stats['delta_margin'] * 100.0:.3g} percentage points` (Significance Level $\\alpha = {stats['alpha']:g}$)")
     md.append(f"- **Evaluated Conditions**: Baseline, +Memory, +Cache, +Both (Full EvidenceFlow)\n")
     md.append(
@@ -207,6 +212,7 @@ def main():
     with open(ds_path, "r", encoding="utf-8") as f:
         data = json.load(f)
 
+    dataset_metadata = get_dataset_metadata(data)
     questions = data.get("questions") or data
     if args.subset:
         questions = questions[:args.subset]
@@ -262,6 +268,7 @@ def main():
             git_commit=git_commit,
             dataset_name=args.dataset,
             repeats=args.repeats,
+            dataset_metadata=dataset_metadata,
         )
 
         print(md_report)
@@ -279,6 +286,7 @@ def main():
                 {
                     "git_commit": git_commit,
                     "dataset": args.dataset,
+                    **dataset_metadata,
                     "repeats": args.repeats,
                     "conditions": [
                         {k: v for k, v in r.items() if k != "groundedness_distribution"}

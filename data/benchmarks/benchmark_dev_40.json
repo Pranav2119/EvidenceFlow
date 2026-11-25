@@ -1,6 +1,7 @@
 {
   "description": "EvidenceFlow AI Tier 1 Dev Benchmark (40 Questions)",
-  "version": "1.0",
+  "version": "1.1",
+  "revision_notes": "Evidence audit: d22 and d25 now require abstention because the indexed same-version corpus does not establish the requested defaults. All question texts and the other labels are unchanged. Answerable cases include reviewed source quotes; typical defaults retain their caveats. Compare label revisions separately from application changes.",
   "total_questions": 40,
   "questions": [
     {
@@ -10,6 +11,7 @@
       "version": "16",
       "should_abstain": false,
       "expected_value": "200",
+      "ground_truth_quote": "The default value is 200.",
       "expected_code": null,
       "ground_truth_chunks": [
         "pg16-runtime-config-resource-vacuum-cost-limit"
@@ -28,6 +30,7 @@
       "version": "14",
       "should_abstain": false,
       "expected_value": "200",
+      "ground_truth_quote": "The default value is 200.",
       "expected_code": null,
       "ground_truth_chunks": [
         "pg14-runtime-config-resource-vacuum-cost-limit"
@@ -46,6 +49,7 @@
       "version": "15",
       "should_abstain": false,
       "expected_value": "128MB",
+      "ground_truth_quote": "The default is typically 128 megabytes ( 128MB ), but might be less if your kernel settings will not support it (as determined during initdb ).",
       "expected_code": null,
       "ground_truth_chunks": [
         "pg15-runtime-config-resource-shared-buffers"
@@ -55,7 +59,7 @@
         "doc_name": "runtime-config-resource.html",
         "title_contains": "shared_buffers"
       },
-      "notes": "Standard memory setting default 128MB"
+      "notes": "Typical default 128MB; initdb may choose less when kernel settings cannot support it. The answer must preserve this qualification; value-presence scoring alone does not check it."
     },
     {
       "id": "d04",
@@ -64,6 +68,7 @@
       "version": "14",
       "should_abstain": false,
       "expected_value": "4MB",
+      "ground_truth_quote": "Sets the base maximum amount of memory to be used by a query operation (such as a sort or hash table) before writing to temporary disk files. If this value is specified without units, it is taken as kilobytes. The default value is four megabytes ( 4MB ).",
       "expected_code": null,
       "ground_truth_chunks": [
         "pg14-runtime-config-resource-work-mem"
@@ -82,6 +87,7 @@
       "version": "16",
       "should_abstain": false,
       "expected_value": "64MB",
+      "ground_truth_quote": "It defaults to 64 megabytes ( 64MB ).",
       "expected_code": null,
       "ground_truth_chunks": [
         "pg16-runtime-config-resource-maintenance-work-mem"
@@ -100,6 +106,7 @@
       "version": "16",
       "should_abstain": false,
       "expected_value": "0",
+      "ground_truth_quote": "The default value is zero, which disables the cost-based vacuum delay feature.",
       "expected_code": null,
       "ground_truth_chunks": [
         "pg16-runtime-config-resource-vacuum-cost-delay"
@@ -118,6 +125,7 @@
       "version": "14",
       "should_abstain": false,
       "expected_value": "0",
+      "ground_truth_quote": "The default value is zero, which disables the cost-based vacuum delay feature.",
       "expected_code": null,
       "ground_truth_chunks": [
         "pg14-runtime-config-resource-vacuum-cost-delay"
@@ -136,6 +144,7 @@
       "version": "16",
       "should_abstain": false,
       "expected_value": "-1",
+      "ground_truth_quote": "If -1 is specified (which is the default), the regular vacuum_cost_limit value will be used.",
       "expected_code": null,
       "ground_truth_chunks": [
         "pg16-runtime-config-autovacuum-autovacuum-vacuum-cost-limit"
@@ -154,6 +163,7 @@
       "version": "16",
       "should_abstain": false,
       "expected_value": "replica",
+      "ground_truth_quote": "The default value is replica , which writes enough data to support WAL archiving and replication, including running read-only queries on a standby server.",
       "expected_code": null,
       "ground_truth_chunks": [
         "pg16-runtime-config-wal-wal-level"
@@ -172,6 +182,7 @@
       "version": "15",
       "should_abstain": false,
       "expected_value": "1GB",
+      "ground_truth_quote": "The default is 1 GB.",
       "expected_code": null,
       "ground_truth_chunks": [
         "pg15-runtime-config-wal-max-wal-size"
@@ -190,6 +201,7 @@
       "version": "14",
       "should_abstain": false,
       "expected_value": "80MB",
+      "ground_truth_quote": "The default is 80 MB.",
       "expected_code": null,
       "ground_truth_chunks": [
         "pg14-runtime-config-wal-min-wal-size"
@@ -208,6 +220,7 @@
       "version": "16",
       "should_abstain": false,
       "expected_value": "5min",
+      "ground_truth_quote": "Maximum time between automatic WAL checkpoints. If this value is specified without units, it is taken as seconds. The valid range is between 30 seconds and one day. The default is five minutes ( 5min ).",
       "expected_code": null,
       "ground_truth_chunks": [
         "pg16-runtime-config-wal-checkpoint-timeout"
@@ -226,6 +239,7 @@
       "version": "14",
       "should_abstain": false,
       "expected_value": "0.9",
+      "ground_truth_quote": "The default is 0.9, which spreads the checkpoint across almost all of the available interval, providing fairly consistent I/O load while also leaving some time for checkpoint completion overhead.",
       "expected_code": null,
       "ground_truth_chunks": [
         "pg14-runtime-config-wal-checkpoint-completion-target"
@@ -244,6 +258,7 @@
       "version": "16",
       "should_abstain": false,
       "expected_value": "100",
+      "ground_truth_quote": "The default is typically 100 connections, but might be less if your kernel settings will not support it (as determined during initdb ).",
       "expected_code": null,
       "ground_truth_chunks": [
         "pg16-runtime-config-connection-max-connections"
@@ -253,7 +268,7 @@
         "doc_name": "runtime-config-connection.html",
         "title_contains": "max_connections"
       },
-      "notes": "Default connection limit 100"
+      "notes": "Typical default 100; initdb may choose less when kernel settings cannot support it. The answer must preserve this qualification; value-presence scoring alone does not check it."
     },
     {
       "id": "d15",
@@ -262,6 +277,7 @@
       "version": "14",
       "should_abstain": false,
       "expected_value": "1s",
+      "ground_truth_quote": "The default is one second ( 1s ), which is probably about the smallest value you would want in practice.",
       "expected_code": null,
       "ground_truth_chunks": [
         "pg14-runtime-config-locks-deadlock-timeout"
@@ -280,6 +296,7 @@
       "version": "15",
       "should_abstain": false,
       "expected_value": "0",
+      "ground_truth_quote": "A value of zero (the default) disables the timeout.",
       "expected_code": null,
       "ground_truth_chunks": [
         "pg15-runtime-config-client-lock-timeout"
@@ -298,6 +315,7 @@
       "version": "14",
       "should_abstain": false,
       "expected_value": "off",
+      "ground_truth_quote": "The default is off.",
       "expected_code": null,
       "ground_truth_chunks": [
         "pg14-runtime-config-logging-log-checkpoints"
@@ -316,6 +334,7 @@
       "version": "15",
       "should_abstain": false,
       "expected_value": "on",
+      "ground_truth_quote": "The default is on.",
       "expected_code": null,
       "ground_truth_chunks": [
         "pg15-runtime-config-logging-log-checkpoints"
@@ -334,6 +353,7 @@
       "version": "16",
       "should_abstain": false,
       "expected_value": "off",
+      "ground_truth_quote": "The default is off .",
       "expected_code": null,
       "ground_truth_chunks": [
         "pg16-runtime-config-logging-log-connections"
@@ -352,6 +372,7 @@
       "version": "14",
       "should_abstain": false,
       "expected_value": "3",
+      "ground_truth_quote": "The default is three.",
       "expected_code": null,
       "ground_truth_chunks": [
         "pg14-runtime-config-autovacuum-autovacuum-max-workers"
@@ -370,6 +391,7 @@
       "version": "16",
       "should_abstain": false,
       "expected_value": "1min",
+      "ground_truth_quote": "The default is one minute ( 1min ).",
       "expected_code": null,
       "ground_truth_chunks": [
         "pg16-runtime-config-autovacuum-autovacuum-naptime"
@@ -383,21 +405,15 @@
     },
     {
       "id": "d22",
-      "category": "versioned_parameter",
+      "category": "insufficient_evidence",
       "query": "What is archive_mode in PostgreSQL 16 and what is its default?",
       "version": "16",
-      "should_abstain": false,
-      "expected_value": "off",
-      "expected_code": null,
-      "ground_truth_chunks": [
-        "pg16-runtime-config-wal-archive-mode"
-      ],
-      "ground_truth_passage_matcher": {
-        "version": "16",
-        "doc_name": "runtime-config-wal.html",
-        "title_contains": "archive_mode"
-      },
-      "notes": "Archive mode default off"
+      "should_abstain": true,
+      "expected_value": null,
+      "expected_code": "NO_SUBSTANTIVE_EVIDENCE",
+      "ground_truth_chunks": [],
+      "ground_truth_passage_matcher": null,
+      "notes": "v1.1: pg16-runtime-config-wal-archive-mode explains behavior and lists off as an option, but does not state the default. The only other indexed v16 references are wal_level and archive_command; neither establishes this default. Abstain on the complete question rather than infer a default from an allowed value."
     },
     {
       "id": "d23",
@@ -406,6 +422,7 @@
       "version": "16",
       "should_abstain": false,
       "expected_value": "256kB",
+      "ground_truth_quote": "The default value is 256 kB .",
       "expected_code": null,
       "ground_truth_chunks": [
         "pg16-runtime-config-resource-vacuum-buffer-usage-limit"
@@ -424,6 +441,7 @@
       "version": "16",
       "should_abstain": false,
       "expected_value": "off",
+      "ground_truth_quote": "The default setting is off .",
       "expected_code": null,
       "ground_truth_chunks": [
         "pg16-runtime-config-developer-ignore-checksum-failure"
@@ -437,21 +455,15 @@
     },
     {
       "id": "d25",
-      "category": "versioned_parameter",
+      "category": "insufficient_evidence",
       "query": "What is the default value of ignore_system_indexes in PostgreSQL 14?",
       "version": "14",
-      "should_abstain": false,
-      "expected_value": "off",
-      "expected_code": null,
-      "ground_truth_chunks": [
-        "pg14-runtime-config-developer-ignore-system-indexes"
-      ],
-      "ground_truth_passage_matcher": {
-        "version": "14",
-        "doc_name": "runtime-config-developer.html",
-        "title_contains": "ignore_system_indexes"
-      },
-      "notes": "Developer toggle default off"
+      "should_abstain": true,
+      "expected_value": null,
+      "expected_code": "NO_SUBSTANTIVE_EVIDENCE",
+      "ground_truth_chunks": [],
+      "ground_truth_passage_matcher": null,
+      "notes": "v1.1: pg14-runtime-config-developer-ignore-system-indexes is the only indexed v14 reference and describes behavior without stating a default. Boolean type alone does not establish default off; abstain until supporting evidence is indexed."
     },
     {
       "id": "d26",
@@ -460,6 +472,7 @@
       "version": "16",
       "should_abstain": false,
       "expected_value": "off",
+      "ground_truth_quote": "The default value is off .",
       "expected_code": null,
       "ground_truth_chunks": [
         "pg16-runtime-config-replication-track-commit-timestamp"

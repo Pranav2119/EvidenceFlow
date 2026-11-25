@@ -9,7 +9,7 @@
 **EvidenceFlow AI** is an inspectable research-assistance prototype for complex, multi-turn technical questions over versioned PostgreSQL documentation (versions 14, 15, and 16).
 
 > [!IMPORTANT]
-> **Readiness review is in progress.** [CI at commit `b84c649`](https://github.com/Pranav2119/EvidenceFlow/actions/runs/45217948535) passed 281 tests and the configured metric gates, and captured the first uncached development baseline. This verifies those checks, not production readiness or factual answer quality. Gold-label support gaps, remaining correctness repairs, and Gemini-enabled evaluation are still open. See the [review roadmap](docs/ROADMAP.md) and [measured baseline with limitations](docs/experiments.md#baseline-dev-ci-45217948535-2026-11-23).
+> **Readiness review is in progress.** [CI at commit `b84c649`](https://github.com/Pranav2119/EvidenceFlow/actions/runs/45217948535) passed 281 tests and the configured metric gates, and captured the first uncached development baseline. This verifies those checks, not production readiness or factual answer quality. The [development-label audit](docs/experiments.md#development-label-audit-v11-2026-11-25) corrects two unsupported labels separately from application changes. Remaining correctness repairs and Gemini-enabled evaluation are still open; see the [review roadmap](docs/ROADMAP.md).
 
 The baseline path combines:
 1. **Rule-Based Guardrails & Abstention Routing**: Checks inputs and retrieved evidence, with refusal paths for detected unsafe or unsupported requests.
@@ -226,6 +226,20 @@ refusal information, and cache-hit flags. Draft text on a refused turn is audit
 data, not an answer delivered to the user. An observed cache hit invalidates this
 uncached benchmark; a missing report fails the upload step.
 
+The active [development dataset](data/benchmarks/benchmark_dev_40.json) is v1.1:
+24 supported answerable cases and 16 expected refusals. Every answerable label has
+an exact reviewed `ground_truth_quote`; the two typical defaults retain their
+kernel/initdb caveats. CI checks quote existence, passage version, value presence,
+and content-hash integrity, not semantic entailment. `d22` and `d25` now require
+abstention because their requested defaults are not established in the indexed
+same-version references.
+
+New baseline and ablation reports include `dataset_version` and `dataset_sha256`.
+The latter hashes the entire parsed dataset as UTF-8 JSON with sorted object keys,
+compact separators, and ASCII escaping; whitespace and object-key order do not
+change it. Notes, labels, quotes, and question-array order do. Compare reports with
+the same dataset identity, or explicitly separate the effect of relabeling.
+
 These are deterministic diagnostic results, not Gemini synthesis measurements.
 The legacy `overall_accuracy_pct` field measures answer/refusal decisions, not
 factual correctness. Quality aggregates use the last timed repeat per question;
@@ -237,10 +251,11 @@ when recording comparisons in [experiments.md](docs/experiments.md).
 
 The first capture is retained as
 [baseline_dev_ci_45217948535.json](data/benchmarks/baseline_dev_ci_45217948535.json).
-It contains 40 cases and 120 timed observations. Its 90.0% decision accuracy is
-against the current dataset labels, not a factual-correctness score; two inspected
-gold passages do not state the expected defaults. See the experiment ledger
-before interpreting the four dataset-flagged wrong refusals as application bugs.
+It contains 40 cases and 120 timed observations under the original v1.0 labels.
+Its 90.0% decision accuracy is not a factual-correctness score. Applying v1.1 labels
+to those unchanged outputs gives 95.0% decision agreement, entirely from the two
+label corrections, not better answers. The original JSON is preserved unchanged;
+see the [audit and label-only comparison](docs/experiments.md#development-label-audit-v11-2026-11-25).
 
 ### 3. Run the 40-Question Guardrail Benchmark Exam
 Evaluates the entire pipeline against legitimate questions, prompt injections, fake technical features, and out-of-domain queries:
