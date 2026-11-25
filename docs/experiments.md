@@ -22,6 +22,26 @@ This document tracks all empirical evaluation runs, benchmark datasets, ablation
 - The longer-name control `d08` still returns the documented `-1` default from `pg16-runtime-config-autovacuum-autovacuum-vacuum-cost-limit` and passes verification.
 - These are component tests/replays, not a new end-to-end benchmark. The full post-change v1.1 CI capture remains pending. No dataset labels, source passages, retrieval scores, live Gemini prompts, or verification thresholds were changed.
 
+### After: Full CI and Same-Dataset Comparison
+
+- **Fix commit:** `6b256aad1bec8392aa9dcd730a55ae0d22356772`; [CI run 45651481101](https://github.com/Pranav2119/EvidenceFlow/actions/runs/45651481101) passed **292 tests**, with one existing Qdrant compatibility warning, and all configured metric gates.
+- **Post-change artifact:** `dev-baseline-45651481101-1`, ID `15041476700`, ZIP SHA-256 `48147d8902ee49877a672e46e70136ad084b82eecdc7a9a64ac88218b9ce5fb1`. Its JSON SHA-256 is `0e6e698ef5188107bfa0b7b30c569dab55d36bb008e455daf13515b83d12314d`.
+- **Pre-change artifact:** ID `15039621056`, ZIP SHA-256 `3273ad408746345756c60d3af6096bf731c0765c18880750df2727f908fb694f`; JSON SHA-256 `c1c4d3c526ba052934c323abe16b3941f35372fe35177918482f56b535d38653`.
+- Both downloaded archives matched GitHub's recorded digests. Both reports have the same v1.1 dataset fingerprint, questions, labels, embedding configuration, retrieval threshold, pacing, and disabled Gemini/memory/cache/checkpoint controls. Each contains 40 questions and 120 timed observations with no cache hits.
+
+| Measurement | Before (`f844911`) | After (`6b256aa`) |
+| :--- | :--- | :--- |
+| Answer/refusal decision agreement | 38/40 = 95.00% | 40/40 = 100.00% |
+| Expected-value presence on answerable cases | 22/24 = 91.67% | 24/24 = 100.00% |
+| Wrong refusals | 2 (`d01`, `d02`) | 0 |
+| Correct refusals | 16/16 | 16/16 |
+| Labeled-evidence recall@5 / MRR | 100.00% / 0.9583 | 100.00% / 0.9583 |
+| All-call median / P95 latency | 31.7 / 89.9 ms | 24.7 / 34.8 ms |
+
+Only `d01` and `d02` changed their returned answers, citations, and verifier/refusal verdicts, consistently in all three repeats. They now return the documented `200` default with the correct v16/v14 `vacuum_cost_limit` passage, and pass the unchanged verifier. All 120 ordered retrieval-ID lists are identical across runs; all other 38 cases retain their returned text, citations, scope, synthesis mode, and verdicts.
+
+Unlike the earlier label-only rescore, this is an observed application correction on unchanged labels. It is still a development regression result, not universal factual correctness or held-out generalization. Citation flags and value presence remain proxies, not independent entailment judgments. The two runs used separate hosted CI jobs, so the lower timing values are recorded but **not attributed to this small fix as a proven speed improvement**. Artifacts follow repository retention settings; the original committed baseline was not overwritten.
+
 ## Development Label Audit v1.1 (2026-11-25)
 
 **This is an evidence/label correction, not an application improvement.** All 40 question texts, order, requested versions, corpus passages, and saved baseline outputs are unchanged. Only `d22` and `d25` change scoring labels. The original [v1.0 dataset at d07d1b2](https://github.com/Pranav2119/EvidenceFlow/blob/d07d1b25cb450f578b6319a55dba64a650df74d1/data/benchmarks/benchmark_dev_40.json) and [first baseline JSON](../data/benchmarks/baseline_dev_ci_45217948535.json) remain available.

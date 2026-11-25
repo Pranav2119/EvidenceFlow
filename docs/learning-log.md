@@ -1236,3 +1236,12 @@ Calling proprietary LLMs inside CI builds introduces cost, rate-limiting, and ne
 - Why is a matching substring in a passage ID weaker evidence than a whole parameter name in its definition header?
 - Why must the related-only case still be rejected even after the normal case starts passing?
 - No local services were started. Original data, environment configuration, benchmark history, and the frozen split are unchanged.
+
+### Measured CI Follow-up
+- Fix commit `6b256aa` passed [CI run 45651481101](https://github.com/Pranav2119/EvidenceFlow/actions/runs/45651481101): **292 tests**, one existing Qdrant compatibility warning, and all configured metric gates.
+- Compared the actual before/after CI artifacts after verifying both archive digests and identical v1.1 dataset fingerprints. Both runs contain 40 questions and 120 timed, uncached observations.
+- Decision agreement changed from **38/40 to 40/40**; expected-value presence changed from **22/24 to 24/24**. Both `vacuum_cost_limit` cases now answer `200` using their own versioned passages.
+- All 120 retrieval rankings are unchanged. Only `d01` and `d02` changed answers/citations/verdicts; the remaining 38 cases, including all 16 required refusals, retain their behavior.
+- No labels were changed for this improvement. Unlike the previous label audit, these two accepted answers are a real behavioral correction on the same development questions.
+- Median/P95 latency was 31.7/89.9 ms before and 24.7/34.8 ms after. Separate hosted runners introduce noise, so I must not claim that the fix caused a speedup.
+- Original baseline history remains intact. Independent factual evaluation, Gemini-enabled measurements, and the other critical safety findings remain separate work.
