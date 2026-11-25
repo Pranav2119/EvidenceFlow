@@ -67,6 +67,8 @@ Every Day/Task strictly follows this 3-phase cadence:
 - [ ] Publish and verify remaining repair batches in full CI after approval.
 - [x] Record the first fresh offline development baseline before RAG behavior changes: [run 45217948535](https://github.com/Pranav2119/EvidenceFlow/actions/runs/45217948535), 40 cases / 120 timed observations, with the original JSON retained and 281 full-suite tests passing.
 - [x] Audit all 40 development labels against indexed evidence/scope; revise to v1.1 with 24 supported answers and 16 refusals, preserving queries and the v1.0 baseline. Record exact support quotes, qualified defaults, and the label-only rescore; 50 focused tests pass locally.
-- [ ] Verify the v1.1 label/provenance patch in full CI after approval. Label corrections do not establish factual answer quality or application improvement.
+- [x] Verify the v1.1 label/provenance patch in [CI run 45648118532](https://github.com/Pranav2119/EvidenceFlow/actions/runs/45648118532): 284 tests and all metric gates passed; the artifact's dataset fingerprint and all 120 observations were checked. Label corrections do not establish application improvement.
+- [x] Reproduce and repair deterministic fallback's overlapping-name definition bonus; 14 focused tests pass, and saved-passage replays verify `vacuum_cost_limit=200` without changing the verifier.
+- [ ] Verify the fallback repair in full CI and compare the same v1.1 dataset's before/after answers, evidence, and refusal outcomes.
 - [ ] Resolve remaining evaluation-methodology limitations before resume quality/performance claims; establish a separately controlled Gemini-enabled baseline before prompt or generation changes.
 - [ ] Resolve the remaining critical citation, cache, version-state, and evaluation findings before claiming overall interview readiness.

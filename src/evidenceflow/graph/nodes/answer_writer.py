@@ -156,9 +156,12 @@ def deterministic_fallback_answer(
         matched_named = [s for s in named_settings if s.replace("_", "-") in cid or s in title or s in content]
         if matched_named:
             match_count = len(matched_named)
-            # Give strong priority to chunks whose ID or title directly defines the parameter
+            # Prefer whole parameter names in definition metadata, not ID substrings.
             for s in matched_named:
-                if s.replace("_", "-") in cid or s in title:
+                if (
+                    re.search(r"\b" + re.escape(s) + r"\b", title)
+                    or re.search(r"^\s*parameter:\s*" + re.escape(s) + r"\b", content, re.MULTILINE)
+                ):
                     match_count += 5
             if match_count > best_match_count:
                 best_match_count = match_count

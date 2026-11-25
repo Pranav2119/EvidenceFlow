@@ -13,7 +13,9 @@ from evidenceflow.state import EvidenceFlowState
 from evidenceflow.graph.nodes.answer_writer import (
     deterministic_fallback_answer,
     answer_writer_node,
+    extract_citations,
 )
+from evidenceflow.graph.nodes.verifier import verifier_node
 from evidenceflow.memory.corpus_settings import set_corpus_settings_override
 
 
@@ -25,6 +27,9 @@ def setup_synthetic_corpus():
         "synthetic_empty_knob",
         "synthetic_knob_no_default",
         "synthetic_buffer_size",
+        "synthetic_cost_limit",
+        "auto_synthetic_cost_limit",
+        "synthetic_cost_limit_extra",
     }
     set_corpus_settings_override(synthetic_settings)
     yield
@@ -145,3 +150,72 @@ def test_answer_writer_node_propagates_offline_abstention(monkeypatch):
     assert res["is_abstained"] is True
     assert res["abstention_code"] == "NO_SUBSTANTIVE_EVIDENCE"
     assert res["synthesis_mode"] == "fallback"
+
+
+@pytest.fixture(params=["auto_synthetic_cost_limit", "synthetic_cost_limit_extra"])
+def overlapping_cost_limit_passages(request):
+    related = request.param
+    return [
+        {
+            "chunk_id": f"pg16-runtime-config-resource-{related.replace('_', '-')}",
+            "title": f"{related} ( integer )",
+            "section": "Resource Consumption",
+            "content": (
+                f"Parameter: {related} ( integer )\n\n"
+                "Specifies the limit used for automatic maintenance. "
+                "If -1 is specified (which is the default), the regular synthetic_cost_limit value will be used."
+            ),
+        },
+        {
+            "chunk_id": "pg16-runtime-config-resource-synthetic-cost-limit",
+            "title": "synthetic_cost_limit ( integer )",
+            "section": "Resource Consumption",
+            "content": (
+                "Parameter: synthetic_cost_limit ( integer )\n\n"
+                "Specifies the accumulated cost before sleeping. The default value is 200."
+            ),
+        },
+    ]
+
+
+@pytest.mark.parametrize("definition_metadata", ["both", "title_only", "header_only"])
+def test_fallback_prefers_exact_parameter_definition(
+    overlapping_cost_limit_passages, definition_metadata,
+):
+    passages = overlapping_cost_limit_passages
+    for passage in passages:
+        if definition_metadata == "title_only":
+            passage["content"] = passage["content"].split("\n\n", 1)[1]
+        elif definition_metadata == "header_only":
+            passage.pop("title")
+
+    query = "What is the default of synthetic_cost_limit in PostgreSQL 16?"
+    answer, code = deterministic_fallback_answer(query, "16", passages)
+
+    assert code is None
+    assert "The default value is 200." in answer
+    assert "[^pg16-runtime-config-resource-synthetic-cost-limit]" in answer
+    verified = verifier_node(EvidenceFlowState(
+        query=query,
+        target_version="16",
+        draft_answer=answer,
+        retrieved_passages=passages,
+        citations=extract_citations(answer, passages),
+    ))
+    assert verified["l1_passed"] is True
+    assert verified["is_abstained"] is False
+
+
+def test_related_parameter_value_still_fails_verification(overlapping_cost_limit_passages):
+    passages = overlapping_cost_limit_passages[:1]
+    query = "What is the default of synthetic_cost_limit in PostgreSQL 16?"
+    answer, _ = deterministic_fallback_answer(query, "16", passages)
+    verified = verifier_node(EvidenceFlowState(
+        query=query,
+        target_version="16",
+        draft_answer=answer,
+        retrieved_passages=passages,
+        citations=extract_citations(answer, passages),
+    ))
+    assert verified["is_abstained"] is True
+    assert verified["abstention_code"] == "VALUE_MISMATCH"

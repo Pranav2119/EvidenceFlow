@@ -4,6 +4,24 @@ This document tracks all empirical evaluation runs, benchmark datasets, ablation
 
 > **Validity notice:** Historical entries below are preserved as records, not re-certified results. Review found cache-contaminated baseline calls, incorrect value scoring, and unsupported non-inferiority success claims. Do not use those historical comparisons as current resume evidence until the affected runs and methods have been revalidated.
 
+## Fallback Definition Selection Repair (2026-11-25)
+
+### Before: Recorded Before Changing Selection Logic
+- **Code:** `f8449119c2a563bb02247d3189991d28510a32db`; [CI baseline run 45648118532](https://github.com/Pranav2119/EvidenceFlow/actions/runs/45648118532), artifact `dev-baseline-45648118532-1`.
+- **Dataset:** audited development v1.1, fingerprint `1274d3fdd110da2987f51cd9d890f82a74941bb59955c54b8ff42900dd7316dd`; 40 cases / 120 timed observations, Gemini/memory/answer cache/checkpointing off.
+- **Observed:** 38/40 answer/refusal decisions agree; 22/24 answerable cases contain the expected value. Only `d01` and `d02` wrongly refuse. All returned answers, evidence, and verifier decisions matched the earlier retained capture, as checked against the actual v1.1 artifact.
+- **Failure:** for `vacuum_cost_limit`, both its own definition and `autovacuum_vacuum_cost_limit` receive the same substring-based definition bonus. The higher-ranked related passage wins, producing its `-1` default; the unchanged verifier correctly rejects the setting/value mismatch. The correct `200` passage is already retrieved at rank 2.
+- **Bounded change:** fix only deterministic fallback's direct-definition bonus using whole parameter names in titles or parameter headers. Do not change ranking from retrieval, thresholds, Gemini prompts/live generation, verifier rules, labels, corpus, cache, or memory logic. The recorded offline baseline covers the path being changed; no claim is made about live Gemini synthesis.
+- **Verification plan:** synthetic overlapping-name regressions with title/header variants, a negative control retaining verifier rejection of a related parameter's value, then the same v1.1 CI development capture. After-results are pending; no improvement is claimed yet.
+
+### After: Local Component Verification
+- Before implementation, the focused file produced **6 failed, 8 passed**: every prefix/suffix collision selected the related parameter's `-1` sentence. After the definition-bonus change, **14 tests passed**.
+- Whole parameter-name matches in the title or `Parameter:` header receive the existing bonus. Partial chunk-ID substrings no longer qualify for it. Generic reference passages remain eligible, and ties still retain retrieval order.
+- The tests cover both metadata fields together, title-only, and header-only passages. When the correct passage is absent, the related value still produces the unchanged verifier's `VALUE_MISMATCH` refusal.
+- Replayed the actual saved retrieval order through only the fallback writer and verifier, with corpus-setting discovery supplied locally: `d01` now yields `The default value is 200.` citing `pg16-runtime-config-resource-vacuum-cost-limit`; `d02` yields the same value with the corresponding v14 citation. Both pass the unchanged verifier.
+- The longer-name control `d08` still returns the documented `-1` default from `pg16-runtime-config-autovacuum-autovacuum-vacuum-cost-limit` and passes verification.
+- These are component tests/replays, not a new end-to-end benchmark. The full post-change v1.1 CI capture remains pending. No dataset labels, source passages, retrieval scores, live Gemini prompts, or verification thresholds were changed.
+
 ## Development Label Audit v1.1 (2026-11-25)
 
 **This is an evidence/label correction, not an application improvement.** All 40 question texts, order, requested versions, corpus passages, and saved baseline outputs are unchanged. Only `d22` and `d25` change scoring labels. The original [v1.0 dataset at d07d1b2](https://github.com/Pranav2119/EvidenceFlow/blob/d07d1b25cb450f578b6319a55dba64a650df74d1/data/benchmarks/benchmark_dev_40.json) and [first baseline JSON](../data/benchmarks/baseline_dev_ci_45217948535.json) remain available.

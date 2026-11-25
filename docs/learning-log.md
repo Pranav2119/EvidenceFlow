@@ -1208,3 +1208,31 @@ Calling proprietary LLMs inside CI builds introduces cost, rate-limiting, and ne
 - Why does correcting two labels increase decision agreement even though no answer changed?
 - Why is an exact quote containing `off` insufficient to prove that `off` is the default?
 - No application/database services were started locally. The temporary test files are managed by pytest; original development services and volumes were left alone.
+
+### Audit Verification Follow-up
+- Audit commit `f844911` passed [CI run 45648118532](https://github.com/Pranav2119/EvidenceFlow/actions/runs/45648118532): **284 tests**, one existing compatibility warning, and all configured metric gates. The uploaded report had the expected v1.1 fingerprint and 120 uncached observations.
+- All returned answers, citations/retrieval IDs, and verifier/refusal verdicts were identical to the earlier baseline. The higher decision percentage was confirmed to be label-only, not better application behavior.
+
+---
+
+## Session 23: Exact-Name Preference in Deterministic Fallback (Draft for Author Review)
+
+**Date:** 2026-11-25
+
+### Root Cause and Minimum Fix
+- `vacuum_cost_limit` is a substring of `autovacuum_vacuum_cost_limit`. The fallback gave both passages the same direct-definition bonus, so the earlier related passage won even though the correct `200` passage was already retrieved.
+- Keep references eligible, but award the existing definition bonus only for a whole parameter name in a title or `Parameter:` header. A partial identifier inside a chunk ID is not proof of a parameter definition.
+- This change is limited to deterministic fallback selection. It does not change retrieval ordering/thresholds, Gemini prompts/live synthesis, sentence scoring, verifier rules, cache/memory, or dataset labels.
+
+### Verification and Concrete Outputs
+- The pre-change v1.1 baseline at `f844911` has 38/40 correct answer/refusal decisions and 22/24 expected values; only `d01` and `d02` wrongly refuse. This baseline was recorded before editing selection logic.
+- Synthetic regressions returned **6 failed, 8 passed** before the fix and **14 passed** afterward. Prefix and suffix near-matches were tested with title-only, header-only, and combined metadata.
+- In real saved-passage replays, both PostgreSQL 14 and 16 `vacuum_cost_limit` questions now produce `The default value is 200.` with their own versioned passage IDs and pass the unchanged verifier.
+- An `autovacuum_vacuum_cost_limit` control still returns `-1`, preserving the distinction between the two parameters.
+- If only the related definition is available, its value remains rejected with `VALUE_MISMATCH`. The repair improves selection; it does not turn off a safety check to obtain a passing answer.
+- The local replays use no database or LLM calls and are not end-to-end benchmark results. The full post-change CI capture is still required at this preparation stage.
+
+### Explain Back and Shutdown
+- Why is a matching substring in a passage ID weaker evidence than a whole parameter name in its definition header?
+- Why must the related-only case still be rejected even after the normal case starts passing?
+- No local services were started. Original data, environment configuration, benchmark history, and the frozen split are unchanged.
