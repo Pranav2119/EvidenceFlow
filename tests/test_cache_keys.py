@@ -1,7 +1,10 @@
 """
 test_cache_keys.py: Unit tests for composite HMAC-SHA256 scope key generator.
-Verifies version isolation, query normalization, config isolation, and salt security.
+Verifies version isolation, literal input identity, config isolation, and salt security.
 """
+
+import hashlib
+import hmac
 
 import pytest
 from evidenceflow.cache.key_generator import (
@@ -25,8 +28,8 @@ def test_version_isolation():
     assert key_v16 != key_multi, "Collision between single and multi-version keys!"
 
 
-def test_query_normalization():
-    """Punctuation, casing, and whitespace variations must yield the exact same scope key."""
+def test_query_identity_preserves_formatting():
+    """The exact cache does not assume formatting variants have the same meaning."""
     q1 = "What is the default value of shared_buffers in PostgreSQL 16?"
     q2 = "  what is the default value of shared_buffers in postgresql 16?  "
     q3 = "WHAT IS THE DEFAULT VALUE OF SHARED_BUFFERS IN POSTGRESQL 16???"
@@ -37,7 +40,8 @@ def test_query_normalization():
     key3 = generate_scope_key(q3, "16")
     key4 = generate_scope_key(q4, "16")
 
-    assert key1 == key2 == key3 == key4, "Query normalization failed to produce identical keys!"
+    assert len({key1, key2, key3, key4}) == 4
+    assert key1 == generate_scope_key(q1, "16")
 
 
 def test_config_version_isolation():
@@ -104,15 +108,10 @@ def test_claim_key_generation():
     assert k1 == k2 == "CLAIM:16:shared_buffers:default"
 
 
-def test_empty_and_whitespace_query_normalization():
-    """Empty string and whitespace-only queries both normalize to an empty string."""
-    assert normalize_query("") == ""
-    assert normalize_query("   ") == ""
-    assert normalize_query("\n\t  ") == ""
-    # Two whitespace-only queries must produce the same scope key (not crash)
-    k1 = generate_scope_key("   ", "16")
-    k2 = generate_scope_key("", "16")
-    assert k1 == k2, "Whitespace-only and empty queries must normalize identically"
+def test_empty_and_whitespace_query_identity():
+    queries = ["", "   ", "\n\t  "]
+    assert [normalize_query(query) for query in queries] == queries
+    assert len({generate_scope_key(query, "16") for query in queries}) == len(queries)
 
 
 def test_none_target_versions_maps_to_any():
@@ -135,3 +134,41 @@ def test_underscore_preserved_in_setting_names():
         "Underscore in a setting name is significant and must produce a different "
         "key from the space-separated form"
     )
+
+
+@pytest.mark.parametrize(
+    "first, second",
+    [
+        ("Explain log_min_duration_statement=-1", "Explain log_min_duration_statement=1"),
+        ("Explain random_page_cost=0.1", "Explain random_page_cost=01"),
+        ("Explain PostgreSQL WHERE x >= 1", "Explain PostgreSQL WHERE x > 1"),
+        ("Explain PostgreSQL SELECT 'Alice'", "Explain PostgreSQL SELECT 'alice'"),
+        ("Explain PostgreSQL SELECT 'a b'", "Explain PostgreSQL SELECT 'a  b'"),
+    ],
+)
+@pytest.mark.parametrize("key_generator", [generate_scope_key, generate_retrieval_key, generate_embedding_key])
+def test_meaningful_text_differences_have_distinct_keys(first, second, key_generator):
+    assert key_generator(first) != key_generator(second)
+
+
+@pytest.mark.parametrize(
+    "key_generator, legacy_payload, uses_hmac",
+    [
+        (generate_scope_key, "I:query|V:16|CFG:v1.0|GD:v1.0|Q:select 1", True),
+        (generate_retrieval_key, "RETRIEVAL|V:16|K:5|Q:select 1", True),
+        (generate_embedding_key, "MODEL:text-embedding-004|TEXT:select 1", False),
+    ],
+)
+def test_new_key_format_cannot_reuse_legacy_entries(key_generator, legacy_payload, uses_hmac):
+    payload = legacy_payload.encode("utf-8")
+    legacy_key = (
+        hmac.new(b"evidenceflow-salt", payload, hashlib.sha256).hexdigest()
+        if uses_hmac else hashlib.sha256(payload).hexdigest()
+    )
+    assert key_generator("select 1") != legacy_key
+
+
+@pytest.mark.parametrize("invalid_text", [None, 1])
+def test_non_text_queries_are_not_silently_coerced(invalid_text):
+    with pytest.raises(TypeError, match="string"):
+        generate_scope_key(invalid_text)

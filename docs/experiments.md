@@ -4,6 +4,25 @@ This document tracks all empirical evaluation runs, benchmark datasets, ablation
 
 > **Validity notice:** Historical entries below are preserved as records, not re-certified results. Review found cache-contaminated baseline calls, incorrect value scoring, and unsupported non-inferiority success claims. Do not use those historical comparisons as current resume evidence until the affected runs and methods have been revalidated.
 
+## Literal Cache-Key Identity Repair (2026-11-25)
+
+### Before: Recorded Before Changing Cache Logic
+- **Application baseline:** writer fix `6b256aa`, documented in `85e58ea`; the recorded v1.1 CI development run has 40/40 answer/refusal decisions and 24/24 expected values. Dataset fingerprint remains `1274d3fdd110da2987f51cd9d890f82a74941bb59955c54b8ff42900dd7316dd`. This uncached run checks the fresh pipeline, not cache safety or hit-rate improvements.
+- **Existing cache checks:** 41 local tests passed before editing, including version/config isolation, hash-mismatch/deletion staleness, and cache-manager behavior. Two workflow-level tests that can contact real services were excluded locally and remain enabled in full CI.
+- **Defect:** L1/L3 preprocessing removes punctuation, folds case, and collapses whitespace, conflating distinct technical queries. L4 embedding keys independently collapse whitespace even though their input text may contain significant literal spacing.
+- **Approved policy:** L1 exact-answer, L3 retrieval, and L4 embedding keys preserve the full input string, including punctuation, case, and whitespace. Formatting variants intentionally miss; identical repeats still hit. A new key-format namespace prevents reusing entries produced under the old lossy rules.
+- **Scope:** keep key helper signatures and existing version/config/guardrail/top-k/model scopes. Semantic vector matching, atomic claim keys, missing-hash validation, and MCP validation are not repaired by this batch. No retrieval, answer-generation, corpus, or dataset changes are planned.
+- **Verification plan:** adversarial same-version query pairs, old-format keys, real cache-gatekeeper misses for distinct queries, and a graph test that fails if a valid exact hit invokes planner/retriever/writer. Run the unchanged development capture after publication; do not infer overall cache safety from uncached benchmark scores.
+
+### Local After-Checks and Compatibility
+- Updated/new checks produced **26 failed, 41 passed, 2 deselected** before implementation. Failures include the deliberately revised normalization contract, not 26 separate vulnerabilities. After implementation: **67 passed, 2 deselected** using the same local selection.
+- Five adversarial pairs differed by sign (`-1`/`1`), decimal point (`0.1`/`01`), comparison operator (`>=`/`>`), quoted-string case, or quoted-string spacing. Before the fix, all five different-query lookups returned a cache hit despite matching live citation hashes. After the fix, all five miss, while each identical-query repeat still hits. These are targeted traps, not a population estimate of the application's false-hit rate.
+- A graph-level exact-hit test uses a stubbed input guard and in-memory corpus, with planner/retriever/writer configured to fail if invoked. All three remain uncalled on the valid hit. Existing stale-hash, deleted-passage, version/config/guardrail, top-k, model, and capacity checks still pass.
+- L1/L3 retain HMAC-SHA256 and L4 retains SHA-256. Only input identity and the payload namespace change: `SCOPE:v2`, `RETRIEVAL:v2`, `EMBEDDING:v2`. A query already identical to its old normalized form still produces a new key, preventing accidental legacy-entry reuse.
+- `normalize_query` keeps its public name but validates string input and returns it unchanged; `normalized_query` remains a legacy metadata field name. Neither semantic matching nor atomic claim-key normalization was changed.
+- The old tests expecting capitalization/spacing variants to hit were explicitly revised after approval. The safer contract can reduce hit rates for reformatted questions; no cache-efficiency improvement is claimed.
+- Full CI (including both locally deselected workflow tests) and the unchanged v1.1 development capture remain pending publication. The uncached benchmark is a behavior-regression check, not evidence that all cache layers are safe.
+
 ## Fallback Definition Selection Repair (2026-11-25)
 
 ### Before: Recorded Before Changing Selection Logic

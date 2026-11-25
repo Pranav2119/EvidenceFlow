@@ -151,6 +151,26 @@ To stop the local services without deleting their data:
 docker compose stop
 ```
 
+### Cache-Key Compatibility (v2)
+
+L1 exact-answer, L3 retrieval, and L4 embedding keys preserve the full input text:
+punctuation, case, and whitespace are significant. For example, `=-1` differs from
+`=1`, and SQL literals `'a b'` and `'a  b'` must not share a key. Identical requests
+still reuse their entries; formatting-only variants intentionally miss rather
+than relying on unsafe normalization.
+
+The `SCOPE:v2`, `RETRIEVAL:v2`, and `EMBEDDING:v2` key namespaces separate new
+entries from the legacy formats. Restart running Python/MCP processes after the
+update; the current stores are in memory. No database migration, corpus
+reindexing, or volume deletion is needed for this key change.
+
+The public `normalize_query` helper and `normalized_query` metadata names remain
+for compatibility, but now preserve literal text. Existing version/config/
+guardrail/intent, retrieval top-k, and embedding-model scope rules remain in place.
+Semantic vector matching and verified-claim keys are unchanged. Missing-hash and
+MCP-validation findings still need separate fixes; this is not a blanket cache-safety
+guarantee. See the [cache identity experiment](docs/experiments.md#literal-cache-key-identity-repair-2026-11-25).
+
 ---
 
 ## Usage

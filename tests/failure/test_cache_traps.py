@@ -273,3 +273,35 @@ def test_break_it_on_purpose_hardcoded_version_scope_sabotage():
 
     # With composite HMAC keys, the keys are completely orthogonal!
     assert k_real_v14 != k_real_v16, "Composite keys must never collide across versions!"
+
+
+@pytest.mark.parametrize(
+    "cached_query, different_query",
+    [
+        ("Explain log_min_duration_statement=-1", "Explain log_min_duration_statement=1"),
+        ("Explain random_page_cost=0.1", "Explain random_page_cost=01"),
+        ("Explain PostgreSQL WHERE x >= 1", "Explain PostgreSQL WHERE x > 1"),
+        ("Explain PostgreSQL SELECT 'Alice'", "Explain PostgreSQL SELECT 'alice'"),
+        ("Explain PostgreSQL SELECT 'a b'", "Explain PostgreSQL SELECT 'a  b'"),
+    ],
+)
+def test_meaningful_query_variant_is_not_a_validated_hit(
+    clean_test_environment, cached_query, different_query,
+):
+    cm, db = clean_test_environment
+    db.set_chunk_hash("synthetic_evidence", "matching_hash")
+    answer = f"Cached answer for {cached_query} [^synthetic_evidence]."
+    cm.set_exact(
+        query=cached_query,
+        answer=answer,
+        citations=[CachedCitation(passage_id="synthetic_evidence", chunk_hash="matching_hash")],
+        target_versions="16",
+    )
+
+    repeat = cache_gatekeeper_node(EvidenceFlowState(query=cached_query, target_version="16"))
+    assert repeat["cache_hit"] is True
+    assert repeat["draft_answer"] == answer
+
+    other = cache_gatekeeper_node(EvidenceFlowState(query=different_query, target_version="16"))
+    assert other["cache_hit"] is False
+    assert other["audit_trail"][-1]["action"] == "cache_miss"

@@ -1,25 +1,21 @@
 """
-key_generator.py: Generates composite HMAC-SHA256 scope keys.
-Prevents cross-version cache collisions and stale responses across
-configuration, guardrail, and corpus changes.
+key_generator.py: Generates versioned keys for scoped cache entries.
+Preserves literal query/text identity; evidence staleness is checked separately.
 """
 
 import hashlib
 import hmac
-import re
 from typing import List, Sequence, Union
 
 
 def normalize_query(query: str) -> str:
     """
-    Strip punctuation and normalize whitespace for deterministic hashing.
-    Converts to lowercase and collapses multiple spaces/newlines.
+    Preserve literal input text; the legacy function name is retained for callers.
+    Punctuation, case, and whitespace can all carry technical meaning.
     """
-    if not query:
-        return ""
-    # Strip punctuation while keeping alphanumeric and whitespace
-    cleaned = re.sub(r"[^\w\s]", "", query.lower())
-    return " ".join(cleaned.split())
+    if not isinstance(query, str):
+        raise TypeError("Cache key input must be a string")
+    return query
 
 
 def generate_scope_key(
@@ -31,12 +27,11 @@ def generate_scope_key(
     intent: str = "query",
 ) -> str:
     """
-    Computes a deterministic composite HMAC-SHA256 scope key for Layer 1 Exact Match cache.
-    Any variation in target version, security configuration, or guardrail rules
-    creates an entirely distinct key, ensuring strict tenant/version isolation.
+    Computes a v2 HMAC-SHA256 key for literal query text and existing scope fields.
+    The namespace separates entries from the old lossy query-normalization format.
 
     Payload format:
-        I:{intent}|V:{sorted_versions}|CFG:{config_version}|GD:{guardrail_version}|Q:{norm_q}
+        SCOPE:v2|I:{intent}|V:{sorted_versions}|CFG:{config_version}|GD:{guardrail_version}|Q:{norm_q}
     """
     norm_q = normalize_query(query)
 
@@ -52,7 +47,7 @@ def generate_scope_key(
     else:
         sorted_versions = str(target_versions).strip()
 
-    payload = f"I:{intent}|V:{sorted_versions}|CFG:{config_version}|GD:{guardrail_version}|Q:{norm_q}"
+    payload = f"SCOPE:v2|I:{intent}|V:{sorted_versions}|CFG:{config_version}|GD:{guardrail_version}|Q:{norm_q}"
 
     return hmac.new(
         secret_salt.encode("utf-8"),
@@ -68,8 +63,8 @@ def generate_retrieval_key(
     secret_salt: str = "evidenceflow-salt",
 ) -> str:
     """
-    Computes a deterministic composite HMAC-SHA256 key for Layer 3 Retrieval cache.
-    Binds normalized query terms, version scope filter, and top_k limit.
+    Computes a v2 HMAC-SHA256 key for Layer 3 Retrieval cache.
+    Binds literal query text, version scope filter, and top_k limit.
     """
     norm_q = normalize_query(query)
     if target_versions is None:
@@ -79,7 +74,7 @@ def generate_retrieval_key(
     else:
         sorted_versions = ",".join(sorted(str(v).strip() for v in target_versions if str(v).strip())) or "any"
 
-    payload = f"RETRIEVAL|V:{sorted_versions}|K:{top_k}|Q:{norm_q}"
+    payload = f"RETRIEVAL:v2|V:{sorted_versions}|K:{top_k}|Q:{norm_q}"
     return hmac.new(
         secret_salt.encode("utf-8"),
         payload.encode("utf-8"),
@@ -92,16 +87,16 @@ def generate_embedding_key(
     model_name: str = "text-embedding-004",
 ) -> str:
     """
-    Computes a deterministic SHA-256 key for Layer 4 Embedding cache.
-    Binds exact normalized text and embedding model name.
+    Computes a v2 SHA-256 key for Layer 4 Embedding cache.
+    Binds literal input text and embedding model name.
 
     NOTE: Uses plain SHA-256 (not HMAC) intentionally. Embedding vectors are
     not secret-sensitive — they are pure mathematical representations of text.
     No cryptographic salt is required here; the model name alone provides
     sufficient namespace separation between embedding model versions.
     """
-    norm_text = " ".join(text.strip().split())
-    payload = f"MODEL:{model_name}|TEXT:{norm_text}"
+    norm_text = normalize_query(text)
+    payload = f"EMBEDDING:v2|MODEL:{model_name}|TEXT:{norm_text}"
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 

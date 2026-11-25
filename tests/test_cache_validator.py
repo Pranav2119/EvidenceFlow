@@ -246,6 +246,31 @@ def test_cache_gatekeeper_node_stale_rejection():
     assert audit["status"] == "evicted"
 
 
+def test_exact_hit_bypasses_fresh_pipeline_nodes(reset_singletons):
+    cm, db = reset_singletons
+    query = "What does log_min_duration_statement=-1 mean in PostgreSQL 16?"
+    db.set_chunk_hash("synthetic_duration", "matching_hash")
+    cm.set_exact(
+        query=query,
+        answer="Cached duration explanation [^synthetic_duration].",
+        citations=[CachedCitation(passage_id="synthetic_duration", chunk_hash="matching_hash")],
+        target_versions="16",
+    )
+    with (
+        patch("evidenceflow.graph.workflow.input_guardrail_node", return_value={"is_abstained": False}),
+        patch("evidenceflow.graph.workflow.planner_node", side_effect=AssertionError("Planner must not run")) as planner,
+        patch("evidenceflow.graph.workflow.retriever_node", side_effect=AssertionError("Retriever must not run")) as retriever,
+        patch("evidenceflow.graph.workflow.answer_writer_node", side_effect=AssertionError("Writer must not run")) as writer,
+    ):
+        graph = create_evidenceflow_graph(enable_audit=False, enable_cache=True)
+        result = graph.invoke({"query": query, "target_version": "16"})
+
+    assert result["cache_hit"] is True
+    planner.assert_not_called()
+    retriever.assert_not_called()
+    writer.assert_not_called()
+
+
 @patch("evidenceflow.graph.nodes.retriever.get_bm25_index")
 @patch("evidenceflow.graph.workflow.pg_record_turn")
 @patch("evidenceflow.graph.audit_wrapper.get_next_step_number", return_value=1)

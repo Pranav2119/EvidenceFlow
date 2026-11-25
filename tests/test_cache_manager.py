@@ -36,7 +36,7 @@ def test_l1_exact_match_hit_and_miss(cache_mgr):
 
     # Exact hit
     hit = cache_mgr.get_exact(
-        query="what is archive_mode default in postgresql 16?",
+        query="What is archive_mode default in PostgreSQL 16?",
         target_versions="16",
     )
     assert hit is not None
@@ -44,6 +44,7 @@ def test_l1_exact_match_hit_and_miss(cache_mgr):
     assert hit.hit_count == 1
     assert len(hit.citations) == 1
     assert hit.citations[0].passage_id == "pg16-wal-archive-mode"
+    assert cache_mgr.get_exact("what is archive_mode default in postgresql 16?", "16") is None
 
     # Miss on different version
     miss = cache_mgr.get_exact(
@@ -124,13 +125,14 @@ def test_l3_retrieval_cache(cache_mgr):
     )
 
     hit = cache_mgr.get_retrieval(
-        query="  shared_buffers config  ",
+        query="shared_buffers config",
         target_versions="16",
         top_k=5,
     )
     assert hit is not None
     assert hit.passage_ids == ["pg16-res-sb", "pg16-res-mb"]
     assert hit.scores == [0.92, 0.84]
+    assert cache_mgr.get_retrieval("  shared_buffers config  ", "16", top_k=5) is None
 
     # Miss on different top_k
     assert cache_mgr.get_retrieval("shared_buffers config", "16", top_k=10) is None
@@ -150,6 +152,7 @@ def test_l4_embedding_cache(cache_mgr):
         model_name="text-embedding-004",
     )
     assert hit == vec
+    assert cache_mgr.get_embedding("Sample  document chunk text", "text-embedding-004") is None
 
     # Miss on different model
     assert cache_mgr.get_embedding("Sample document chunk text", "other-model") is None
@@ -238,7 +241,7 @@ def test_high_level_orchestrated_lookup(cache_mgr):
     cache_mgr.set_exact("Exact query", "Exact answer", citations, "16")
 
     # 1. Exact Hit
-    res_l1 = cache_mgr.lookup("exact query", "16")
+    res_l1 = cache_mgr.lookup("Exact query", "16")
     assert res_l1.hit is True
     assert res_l1.layer == CacheLayer.L1_EXACT
     assert res_l1.answer == "Exact answer"

@@ -1245,3 +1245,33 @@ Calling proprietary LLMs inside CI builds introduces cost, rate-limiting, and ne
 - No labels were changed for this improvement. Unlike the previous label audit, these two accepted answers are a real behavioral correction on the same development questions.
 - Median/P95 latency was 31.7/89.9 ms before and 24.7/34.8 ms after. Separate hosted runners introduce noise, so I must not claim that the fix caused a speedup.
 - Original baseline history remains intact. Independent factual evaluation, Gemini-enabled measurements, and the other critical safety findings remain separate work.
+
+---
+
+## Session 24: Literal Cache Identity and Safe Key-Version Changes (Draft for Author Review)
+
+**Date:** 2026-11-25
+
+### Concept and Decision
+- A strong hash cannot restore information removed before hashing. Stripping punctuation made `log_min_duration_statement=-1` and `=1` identical; lowercasing and whitespace folding also conflated distinct SQL literals.
+- With approval, L1 exact answers, L3 retrieval, and L4 embedding caches now preserve the full input string. Identical requests still hit; formatting variants intentionally miss. This supersedes the historical Day 9 normalization behavior, not its recorded results.
+- Keeping literal text is simpler and safer than inventing a parser to decide which punctuation or spaces are meaningful. The trade-off is potentially lower reuse for harmless formatting differences.
+- Versioned key namespaces prevent old normalized entries from accidentally matching new literal queries. Scope fields and hash algorithms are unchanged; no database volumes or historical records are deleted.
+
+### Before and After Evidence
+- Before edits, the existing in-memory collision/staleness suite passed **41 tests**, with two service-reaching workflow tests reserved for CI.
+- The updated contract and new regressions produced **26 failed, 41 passed, 2 deselected** before implementation. After implementation: **67 passed, 2 deselected**.
+- All five deliberately different-query traps previously returned false hits even when citation hashes matched. Afterward each is a miss, while each original query still hits. This is evidence for these traps, not a universal zero false-hit-rate claim.
+- The exact-hit graph test fails if planner, retriever, or writer executes; none executes. Its input guard is stubbed and corpus is in memory, while full CI retains the real workflow tests.
+- The existing uncached v1.1 application baseline is 40/40 decision agreement and 24/24 expected-value presence. A post-change CI capture is still required at this preparation stage to check that fresh-answer behavior remains unchanged.
+
+### Compatibility and Remaining Work
+- The public `normalize_query` name and `normalized_query` metadata fields are retained, but their values are now literal text. Non-string key inputs raise an explicit `TypeError`.
+- L1 and L3 use new HMAC namespaces; L4 uses a new SHA-256 namespace and no longer collapses whitespace. Semantic vector lookup and verified-claim keys remain unchanged.
+- Missing stored hashes, MCP cache validation, and broader answer-validation findings remain open. The uncached development benchmark cannot certify these cache paths.
+- Restart running Python/MCP processes after pulling the update; current cache stores are in memory. No new dependency, service, corpus reindex, or database migration is needed.
+
+### Explain Back and Shutdown
+- Why can SHA-256 produce identical keys for different original questions when preprocessing is lossy?
+- Why is an intentional cache miss preferable to treating different quoted literals as equivalent?
+- No local application/database services were started. Only isolated test fixtures were used; original data and the frozen split remain untouched.

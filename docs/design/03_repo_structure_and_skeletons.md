@@ -244,6 +244,12 @@ def create_evidence_flow_graph() -> StateGraph:
 ## 4. Skeleton: Scoped Cache Key Generator & Validator (`src/evidenceflow/cache/`)
 
 ### `key_generator.py`
+
+This simplified example follows the literal-input v2 policy. See the
+[production key generator](../../src/evidenceflow/cache/key_generator.py) for the
+complete scope types and retrieval/embedding key formats. Do not restore the
+historical punctuation/case/whitespace folding.
+
 ```python
 """
 key_generator.py: Generates composite HMAC-SHA256 scope keys.
@@ -252,14 +258,14 @@ Prevents cross-version cache collisions.
 
 import hashlib
 import hmac
-import re
 from typing import List
 
 
 def normalize_query(query: str) -> str:
-    """Strip punctuation and normalize whitespace for deterministic hashing."""
-    cleaned = re.sub(r"[^\w\s]", "", query.lower())
-    return " ".join(cleaned.split())
+    """Preserve literal query text; retain the helper name for compatibility."""
+    if not isinstance(query, str):
+        raise TypeError("Cache key input must be a string")
+    return query
 
 
 def generate_scope_key(
@@ -267,7 +273,8 @@ def generate_scope_key(
     target_versions: List[str],
     config_version: str,
     guardrail_version: str,
-    secret_salt: str = "evidenceflow-salt"
+    secret_salt: str = "evidenceflow-salt",
+    intent: str = "query",
 ) -> str:
     """
     Computes a deterministic composite key.
@@ -276,7 +283,7 @@ def generate_scope_key(
     norm_q = normalize_query(query)
     sorted_versions = ",".join(sorted(target_versions))
     
-    payload = f"V:{sorted_versions}|CFG:{config_version}|GD:{guardrail_version}|Q:{norm_q}"
+    payload = f"SCOPE:v2|I:{intent}|V:{sorted_versions}|CFG:{config_version}|GD:{guardrail_version}|Q:{norm_q}"
     
     return hmac.new(
         secret_salt.encode("utf-8"),
