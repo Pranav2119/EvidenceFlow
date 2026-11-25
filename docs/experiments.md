@@ -23,6 +23,15 @@ This document tracks all empirical evaluation runs, benchmark datasets, ablation
 - The old tests expecting capitalization/spacing variants to hit were explicitly revised after approval. The safer contract can reduce hit rates for reformatted questions; no cache-efficiency improvement is claimed.
 - Full CI (including both locally deselected workflow tests) and the unchanged v1.1 development capture remain pending publication. The uncached benchmark is a behavior-regression check, not evidence that all cache layers are safe.
 
+### Full CI and Fresh-Pipeline Preservation
+- **Fix commit:** `4facf10388f8323d4a155ca1c27cafa53234de39`; [CI run 45660978685](https://github.com/Pranav2119/EvidenceFlow/actions/runs/45660978685) passed **318 tests**, with one existing Qdrant compatibility warning, and all configured metric gates. Both locally excluded workflow tests ran in the unfiltered suite.
+- **Post-change artifact:** `dev-baseline-45660978685-1`, ID `15045751629`; archive SHA-256 `f6d700b0c1f5a69f9156cff1e938def73be30636802c35bd5f39bde136279368`, JSON SHA-256 `90803cbd8e9e75eba24b2af39368c6906ceedf97c4579ac0b9f37987a3f063ea`.
+- Compared it with the verified `6b256aa` control artifact `15041476700` (JSON SHA-256 `0e6e698ef5188107bfa0b7b30c569dab55d36bb008e455daf13515b83d12314d`). Both archive digests matched GitHub's records, and both reports use the unchanged v1.1 dataset fingerprint and execution controls.
+- All **120** returned answers, citations, ordered retrieval IDs, target versions, synthesis modes, and verifier/refusal outcomes are identical. Decision agreement stays **40/40**; expected-value presence stays **24/24**; all **16/16** expected refusals remain correct.
+- All-call median/P95 were **24.7/34.8 ms before** and **30.4/65.9 ms after** on separate hosted CI jobs. These runs disable caching; their timing difference does not isolate the cost of the new key generation. No speed or cache-efficiency gain is claimed.
+- Cache-specific evidence comes from the separate tests: the five distinct-query traps now miss, identical repeats hit, old key formats do not match new keys, and a graph hit skips planner/retriever/writer. Existing staleness, version/config, and workflow checks also pass.
+- Scope remains limited to L1/L3/L4 key identity. Semantic-hit correctness, missing stored hashes, and MCP validation are still open. The original committed baseline, corpus, and dataset were not changed.
+
 ## Fallback Definition Selection Repair (2026-11-25)
 
 ### Before: Recorded Before Changing Selection Logic

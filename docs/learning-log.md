@@ -1275,3 +1275,10 @@ Calling proprietary LLMs inside CI builds introduces cost, rate-limiting, and ne
 - Why can SHA-256 produce identical keys for different original questions when preprocessing is lossy?
 - Why is an intentional cache miss preferable to treating different quoted literals as equivalent?
 - No local application/database services were started. Only isolated test fixtures were used; original data and the frozen split remain untouched.
+
+### Verified CI Follow-up
+- Key fix `4facf10` passed [CI run 45660978685](https://github.com/Pranav2119/EvidenceFlow/actions/runs/45660978685): **318 tests**, one existing Qdrant compatibility warning, and all configured metric gates. Both workflow tests reserved for CI ran successfully.
+- Verified both before/after artifact digests and the same v1.1 dataset fingerprint. All 120 uncached answers, citations, retrieval orders, scopes, and refusal/verifier outcomes remain identical; decision agreement stays 40/40 and expected-value presence 24/24.
+- The cache-specific regressions, rather than this cache-disabled benchmark, establish that the five tested query variants no longer produce false hits and that valid exact hits still skip fresh pipeline work.
+- Raw median/P95 changed from 24.7/34.8 ms to 30.4/65.9 ms across separate hosted jobs. Record the variation honestly; this does not isolate key-generation performance or prove a speed improvement.
+- No corpus, dataset, original baseline, local service data, or dependency versions changed. Missing-hash and MCP validation are the next separate repairs.
