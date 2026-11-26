@@ -25,6 +25,16 @@ This document tracks all empirical evaluation runs, benchmark datasets, ablation
 - Downloaded the verified `97fb050` control artifact and replayed all **72 accepted answer observations** against the new verifier using the committed passages: **zero new rejections**. This is a component replay, not a replacement for full pipeline evaluation.
 - Prompts, retrieval scores/thresholds, corpus, v1.1 labels, cache keys, and live model selection are unchanged. Full CI and a same-dataset post-change capture remain pending.
 
+### Full CI and Same-Dataset Verification
+- **Fix commit:** `613f1cc1807488a2cfec09b46786887e16bd1415`; [CI run 45863511959](https://github.com/Pranav2119/EvidenceFlow/actions/runs/45863511959) passed **369 tests**, with one existing Qdrant compatibility warning, and all configured metric gates. The cross-version workflow test remains enabled and passes with the newly cited fallback output.
+- **Post-change artifact:** `dev-baseline-45863511959-1`, ID `15139277291`; archive SHA-256 `2bd9390b8313b978d65a48e5f205e837b28e673effd3133dfae583acd00ef9ef`, JSON SHA-256 `5bd3f912dc6a91d300af41ce7e670213630c32c6d81532ed8d41ebf9b89c9587`.
+- **Control:** `97fb050`, artifact `15112025830`, JSON SHA-256 `41be0dc6efd57b8009f7f01fc8c147099fe2e1b5b5096f909798e4f23fe9528e`. Both archive digests matched GitHub's records; both reports use the identical v1.1 dataset fingerprint and disabled Gemini/memory/cache/checkpoint controls.
+- All **120** returned answers, citations, ordered retrieval IDs, scopes, synthesis modes, and verifier/refusal outcomes remain unchanged. Decision agreement stays **40/40**, expected-value presence **24/24**, and expected refusals **16/16**.
+- All-call median/P95 were **32.6/89.0 ms before** and **38.1/82.4 ms after** across separate hosted jobs. This single comparison establishes neither a speedup nor a slowdown attributable to the patch.
+- Adversarial regressions, rather than an improved benchmark percentage, verify the repaired false passes: partial numbers/units, missing count checks, and uncited suffixes now fail; valid units, numeric descriptions, and correctly cited version comparisons pass.
+- The tracked `verifier-values` group is closed for its confirmed cases. The review count is now **10 closed / 12 open or partially resolved**, out of 22 actionable finding groups, with one additional disproved suspicion excluded. This count is not a claim that all possible defects have been discovered.
+- Full semantic entailment, judge-revised-answer re-verification, version-state handling, and the other tracked findings remain separate work. Original baseline data and the frozen split were not modified; temporary ZIP downloads were removed after validation.
+
 ## Cache Evidence Validation and MCP Boundary Repair (2026-11-26)
 
 ### Before: Recorded Before Validation Changes

@@ -1352,3 +1352,11 @@ Calling proprietary LLMs inside CI builds introduces cost, rate-limiting, and ne
 - Why must a default of `16` be checked even though PostgreSQL version labels often contain `16`?
 - Why is citing one correct sentence insufficient to validate an uncited sentence that follows it?
 - No local application/database services were started. Restart running Python/MCP processes after pulling an approved update; no database reset is needed.
+
+### Verified CI Follow-up
+- Verifier repair `613f1cc` passed [CI run 45863511959](https://github.com/Pranav2119/EvidenceFlow/actions/runs/45863511959): **369 tests**, one existing Qdrant compatibility warning, and all configured metric gates, including the cross-version workflow test.
+- Verified the actual before/after archives and identical v1.1 dataset fingerprint. All 120 answers, citations, rankings, scopes, and refusal/verifier outcomes match the control; decision agreement stays 40/40 and expected-value presence 24/24.
+- The fix catches targeted invalid claims rather than increasing an already-perfect development decision score. That distinction matters: a green benchmark can miss serious failure cases until tests explicitly exercise them.
+- Median/P95 were 32.6/89.0 ms before and 38.1/82.4 ms after on separate hosted jobs; no causal performance claim follows.
+- The tracked verifier group is closed: **10 of 22 actionable groups closed, 12 open/partly resolved**. One earlier suspicion was disproved and is not counted as an actionable fix.
+- No Docker services on the user's machine were needed. Original data and the frozen split remain unchanged; temporary report downloads were cleaned up.
