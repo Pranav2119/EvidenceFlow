@@ -1312,3 +1312,11 @@ Calling proprietary LLMs inside CI builds introduces cost, rate-limiting, and ne
 - Why is an empty stored hash different from an ordinary cache miss, and why must it not be filled from the current passage automatically?
 - Why must a write with valid evidence hashes still have its answer checked?
 - No local application/database services were started. Restart Python/MCP processes after pulling an approved update; no database reset or reindex is required.
+
+### Verified CI Follow-up
+- Evidence/MCP fix `97fb050` passed [CI run 45809498665](https://github.com/Pranav2119/EvidenceFlow/actions/runs/45809498665): **345 tests**, one existing Qdrant compatibility warning, and all configured metric gates.
+- Verified both before/after archive digests and the same v1.1 dataset fingerprint. All 120 fresh-answer observations retain their answers, citations, retrieval order, scope, and verifier/refusal outcomes. Decision agreement remains 40/40, expected-value presence 24/24, and required refusals 16/16.
+- Cache-specific regression/protocol tests, not the uncached benchmark, demonstrate that empty hashes and unchecked MCP access no longer bypass these validation steps. Wrong-value replacements are rejected without losing the valid cached answer.
+- Median/P95 changed from 30.4/65.9 ms to 32.6/89.0 ms across separate CI jobs. Do not infer a cache-validation performance effect from cache-disabled runs.
+- No local Docker services were needed or contacted. Temporary report downloads were cleaned up; original data and the frozen split stayed untouched.
+- This is a verified boundary repair, not authentication or proof that the existing verifier catches every unsupported claim.

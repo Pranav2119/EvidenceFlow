@@ -25,6 +25,16 @@ This document tracks all empirical evaluation runs, benchmark datasets, ablation
 - Production code changed only in the shared cache validator and memory/cache MCP server. Prompts, retrieval, answer generation, verifier rules, v2 key semantics, corpus, and v1.1 labels remain unchanged.
 - These are targeted checks, not a universal cache-safety or semantic-entailment guarantee. Digest format/recomputation, caller authentication, semantic-cache correctness, and known verifier weaknesses remain separate. Full CI and post-change development results are pending at this preparation stage.
 
+### Full CI and Same-Dataset Verification
+- **Fix commit:** `97fb050e13f3c89aedcc52c16b0ccd5ab3f4bce0`; [CI run 45809498665](https://github.com/Pranav2119/EvidenceFlow/actions/runs/45809498665) passed **345 tests**, with one existing Qdrant compatibility warning, and all configured metric gates. Both workflow tests reserved for CI ran in the unfiltered suite.
+- **Post-change artifact:** `dev-baseline-45809498665-1`, ID `15112025830`; archive SHA-256 `5656e40a294d963c7b11465439695f7c6f2bd46d13e7f8f950805c4344bfaef5`, JSON SHA-256 `41be0dc6efd57b8009f7f01fc8c147099fe2e1b5b5096f909798e4f23fe9528e`.
+- **Control:** `4facf10`, artifact `15045751629`, JSON SHA-256 `90803cbd8e9e75eba24b2af39368c6906ceedf97c4579ac0b9f37987a3f063ea`. Both downloaded archives matched GitHub's recorded digests; both reports have identical v1.1 dataset fingerprints, inputs, labels, and disabled Gemini/memory/cache/checkpoint controls.
+- Across **120 timed observations**, all returned answers, citations, ordered retrieval IDs, scopes, synthesis modes, and verifier/refusal outcomes are unchanged. Decision agreement remains **40/40**, expected-value presence **24/24**, and expected refusals **16/16**.
+- All-call median/P95 were **30.4/65.9 ms before** and **32.6/89.0 ms after** on separate hosted jobs. These cache-disabled timings do not isolate cache/MCP validation cost; no speed or quality-improvement claim is made from them.
+- Cache-specific tests verify hashless/stale rejection, targeted eviction, refusal of wrong-version or unsupported MCP writes, preserved valid entries after rejected replacements, actual MCP protocol behavior, and continued exact-hit routing without fresh pipeline work. The unchanged development benchmark is only a fresh-pipeline regression check.
+- All tests here and in CI required no access to the user's Docker machine. No original data, baseline report, corpus, dataset labels, dependency versions, or local service configuration was changed. The temporary comparison ZIPs were removed after verification.
+- The bounded missing-hash/read/write-validation repair is verified. Caller-role authentication, semantic-cache safety, deeper answer-verifier correctness, and audit persistence remain separate work.
+
 ## Literal Cache-Key Identity Repair (2026-11-25)
 
 ### Before: Recorded Before Changing Cache Logic
