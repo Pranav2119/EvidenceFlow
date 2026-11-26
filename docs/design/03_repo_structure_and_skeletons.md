@@ -293,6 +293,12 @@ def generate_scope_key(
 ```
 
 ### `validator.py`
+
+This shortened example returns a boolean. The
+[production validator](../../src/evidenceflow/cache/validator.py) also returns
+rejection reasons and affected passage IDs for targeted eviction. A stored hash
+must be present before consulting live evidence; do not backfill it during a hit.
+
 ```python
 """
 validator.py: Zero-LLM deterministic validation for cache hits.
@@ -320,11 +326,15 @@ def validate_cache_hit(
         return False
         
     for item in cached_citations:
-        passage_id = item["passage_id"]
-        cached_hash = item["chunk_hash"]
+        passage_id = item.get("passage_id")
+        cached_hash = item.get("chunk_hash")
+        if not isinstance(passage_id, str) or not passage_id.strip():
+            return False
+        if not isinstance(cached_hash, str) or not cached_hash.strip():
+            return False
         
         live_hash = db.get_chunk_hash(passage_id)
-        if live_hash is None or live_hash != cached_hash:
+        if not isinstance(live_hash, str) or not live_hash.strip() or live_hash != cached_hash:
             return False  # Stale cache detected!
             
     return True

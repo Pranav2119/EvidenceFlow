@@ -1282,3 +1282,33 @@ Calling proprietary LLMs inside CI builds introduces cost, rate-limiting, and ne
 - The cache-specific regressions, rather than this cache-disabled benchmark, establish that the five tested query variants no longer produce false hits and that valid exact hits still skip fresh pipeline work.
 - Raw median/P95 changed from 24.7/34.8 ms to 30.4/65.9 ms across separate hosted jobs. Record the variation honestly; this does not isolate key-generation performance or prove a speed improvement.
 - No corpus, dataset, original baseline, local service data, or dependency versions changed. Missing-hash and MCP validation are the next separate repairs.
+
+---
+
+## Session 25: Live Evidence Checks at the Cache Boundary (Draft for Author Review)
+
+**Date:** 2026-11-26
+
+### Concept and Failure
+- A passage existing today does not prove that a cached answer used the same passage content. The stored hash is the link to the original evidence; accepting `chunk_hash=""` silently removes that link.
+- The MCP tools are another entry point. Correct validation inside the graph is insufficient when a public lookup skips it or a write stores an unchecked answer.
+- A matching hash still does not prove factual correctness. Writes also need the existing answer verifier and scope/input checks, and that verifier has known limitations of its own.
+
+### Bounded Repairs
+- Require nonblank string hashes on both sides of the comparison. Reject absent/malformed stored hashes before looking up a passage, and check every citation rather than treating one valid citation as enough.
+- Evict a malformed entry without invalidating a valid sibling on the same passage. Reuse existing passage-based invalidation for changed or unavailable live evidence.
+- MCP reads validate hashes before returning an answer; bad reads return a structured rejection and no answer. Lookup latency now includes this work.
+- MCP writes inspect live versioned passages, check input and detected injection patterns, match answer markers to supplied citations, and run the unchanged deterministic verifier. For evidence saying `100`, an attempted `9999999` replacement is rejected without replacing the previous entry.
+- Keep valid hit/miss and write-success fields, dictionary payloads, and citation aliases compatible. Log actual tool status rather than reporting rejected operations as successful.
+
+### Verification and Trade-offs
+- Existing isolated baseline: **76 passed, 2 deselected**. New focused regressions: **26 failed, 33 passed, 2 deselected** before implementation. After repair: **103 passed, 2 deselected** across the combined cache/MCP suite.
+- Local fixtures use in-memory corpus hashes, mocked live passage reads, mocked audit writes, and an actual in-memory MCP client/server session. No local Docker services or LLMs were needed.
+- Full integration tests and the development benchmark will use GitHub Actions' own containers. The user's Docker machine does not need to be running for these checks.
+- Extra live reads intentionally replace unsafe success when evidence is unavailable. Matching strings check freshness; digest syntax and content-hash recomputation are not added in this batch.
+- Caller-provided role names are a trusted-local convention, not authentication. Deeper verifier gaps, semantic matching, and audit persistence still need separate work. No new dependency, service, prompt, corpus, or dataset was introduced.
+
+### Explain Back and Shutdown
+- Why is an empty stored hash different from an ordinary cache miss, and why must it not be filled from the current passage automatically?
+- Why must a write with valid evidence hashes still have its answer checked?
+- No local application/database services were started. Restart Python/MCP processes after pulling an approved update; no database reset or reindex is required.

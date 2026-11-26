@@ -167,9 +167,38 @@ reindexing, or volume deletion is needed for this key change.
 The public `normalize_query` helper and `normalized_query` metadata names remain
 for compatibility, but now preserve literal text. Existing version/config/
 guardrail/intent, retrieval top-k, and embedding-model scope rules remain in place.
-Semantic vector matching and verified-claim keys are unchanged. Missing-hash and
-MCP-validation findings still need separate fixes; this is not a blanket cache-safety
-guarantee. See the [cache identity experiment](docs/experiments.md#literal-cache-key-identity-repair-2026-11-25).
+Semantic vector matching and verified-claim keys are unchanged; this is not a
+blanket cache-safety guarantee. See the [cache identity experiment](docs/experiments.md#literal-cache-key-identity-repair-2026-11-25).
+
+### Cache Evidence Validation and MCP Access
+
+Cache-hit validation requires a nonblank string hash for every citation and an
+exact match with its live hash. Missing or malformed hashes reject the entry.
+A missing cached hash evicts only that entry; a changed/missing live passage
+uses the existing passage-based invalidation. Hash equality checks freshness,
+not whether an answer is true. The check does not infer a missing stored hash
+from today's corpus, validate digest syntax, or recompute document hashes.
+
+`memory-cache-mcp` lookups now perform this validation before returning an answer.
+Invalid hits return `{"status": "rejected", "hit": false, "error": "..."}` and are
+evicted; valid hit/miss response fields remain compatible. Callers should treat a
+rejected lookup as unavailable cached evidence, not serve the old answer. Reported
+lookup latency includes validation.
+
+MCP writes reject malformed payloads, apply the existing input/injection checks,
+inspect actual live passages for matching hashes and version scope, and run the
+existing deterministic answer verifier. Answer citation markers must match the
+supplied evidence IDs. A rejected write does not replace a valid existing entry.
+Dictionary answer payloads and the `chunk_id`/`sha256` citation aliases remain
+supported. Rejections log to stderr and are passed to the audit logger as rejected,
+not successful operations.
+
+These checks use database reads and plain code, not LLM calls. Live evidence must
+be available; MCP writes additionally fetch passage content from Qdrant. Roles
+passed as tool arguments are **not authentication**: use this stdio server only
+within a trusted local process boundary. Semantic hits, deeper verifier gaps, and
+best-effort audit persistence remain limitations. Restart Python/MCP processes
+after pulling; no database migration or volume deletion is required.
 
 ---
 

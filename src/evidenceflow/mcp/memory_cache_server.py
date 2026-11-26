@@ -1,6 +1,6 @@
 """
-memory_cache_server.py: FastMCP Server for Memory & Cache operations with Role-Based Write Isolation.
-Enforces strict least-privilege security boundaries:
+memory_cache_server.py: FastMCP tools for trusted-local memory and cache operations.
+Caller-supplied roles are routing restrictions, not authenticated identities:
   - Cache Lookups: Allowed for cache_gatekeeper, planner, orchestrator, admin.
   - Cache Writes: RESTRICTED to cache_gatekeeper and admin.
   - Memory Graph Queries: Allowed for planner, memory_resolver, orchestrator, analyst, admin.
@@ -16,17 +16,23 @@ import sys
 import time
 import uuid
 from typing import Any, Dict, List, Optional, Set, Union
-from pydantic import Field
+from pydantic import Field, ValidationError
 from mcp.server.fastmcp import FastMCP
 
 from evidenceflow.cache.manager import ScopedCacheManager
 from evidenceflow.cache.models import CachedCitation
-from evidenceflow.graph.nodes.cache_gatekeeper import get_cache_manager
+from evidenceflow.cache.validator import validate_cache_hit, evict_stale_cache_entry
+from evidenceflow.graph.nodes.cache_gatekeeper import get_cache_manager, get_corpus_database
+from evidenceflow.graph.nodes.answer_writer import extract_citations
+from evidenceflow.graph.nodes.verifier import verifier_node
+from evidenceflow.guardrails.input_guardrail import INJECTION_PATTERNS, input_guardrail_node
 from evidenceflow.memory.graph_client import (
     get_session_history,
     record_turn as neo4j_record_turn,
 )
 from evidenceflow.storage.ledger import record_step, get_next_step_number
+from evidenceflow.storage.qdrant_client import get_evidence_qdrant_client
+from evidenceflow.state import EvidenceFlowState
 
 # Configure logging exclusively to sys.stderr to avoid corrupting stdio transport
 logging.basicConfig(
@@ -154,8 +160,9 @@ def require_role(allowed_roles: Set[str], operation: str):
             _log_audit_step(
                 caller_role=role_str,
                 operation=operation,
-                status="success",
+                status=result["status"],
                 latency_ms=elapsed_ms,
+                error=result.get("error"),
             )
             return result
         return wrapper
@@ -166,6 +173,11 @@ def require_role(allowed_roles: Set[str], operation: str):
 # Cache FastMCP Tools (Isolated Read & Write)
 # =============================================================================
 
+def _cache_rejection(reason: str) -> Dict[str, Any]:
+    logger.warning("Cache operation rejected: %s", reason)
+    return {"status": "rejected", "error": reason}
+
+
 @mcp.tool()
 @require_role(ALLOWED_CACHE_READ_ROLES, "read cache")
 def lookup_cache(
@@ -175,12 +187,30 @@ def lookup_cache(
     caller_id: str = "default_caller",
 ) -> Dict[str, Any]:
     """
-    Look up a verified response in the 5-layer scoped cache.
+    Look up an exact cached response and validate its live evidence hashes.
     Allowed roles: cache_gatekeeper, planner, orchestrator, admin.
     """
+    started = time.perf_counter()
     cm = get_cache_manager()
     res = cm.lookup(query=query, target_versions=version)
     if res.hit:
+        if not res.answer or not res.answer.strip():
+            valid, reason, stale = False, "INVALID_ANSWER: cached answer is empty", []
+        else:
+            valid, reason, stale = validate_cache_hit(
+                res.citations,
+                get_corpus_database(),
+                current_config_version=cm.default_config_version,
+                current_guardrail_version=cm.default_guardrail_version,
+            )
+        if not valid:
+            assert reason is not None
+            evict_stale_cache_entry(cm, stale, cache_key=res.metadata.get("key"))
+            return {
+                **_cache_rejection(reason),
+                "hit": False,
+                "latency_ms": (time.perf_counter() - started) * 1000.0,
+            }
         return {
             "status": "hit",
             "hit": True,
@@ -188,12 +218,12 @@ def lookup_cache(
             "answer": res.answer,
             "citations": [c.model_dump() for c in res.citations],
             "similarity_score": res.similarity_score,
-            "latency_ms": res.lookup_latency_ms,
+            "latency_ms": (time.perf_counter() - started) * 1000.0,
         }
     return {
         "status": "miss",
         "hit": False,
-        "latency_ms": res.lookup_latency_ms,
+        "latency_ms": (time.perf_counter() - started) * 1000.0,
     }
 
 
@@ -208,7 +238,7 @@ def write_cache(
     caller_id: str = "default_caller",
 ) -> Dict[str, Any]:
     """
-    Store a verified answer and citations into the L1 Exact Match scoped cache.
+    Validate input, live versioned evidence, and deterministic answer checks before L1 storage.
     RESTRICTED ROLE: Only cache_gatekeeper and admin may commit to cache.
     Attempts from retriever, answer_writer, or planner are strictly rejected.
     """
@@ -223,6 +253,19 @@ def write_cache(
     elif isinstance(answer, str):
         ans_text = answer
 
+    if not isinstance(ans_text, str) or not ans_text.strip():
+        return _cache_rejection("INVALID_ANSWER: answer must be a nonblank string")
+    if not isinstance(cits_list, list):
+        return _cache_rejection("INVALID_CITATION: citations must be a list")
+    if not isinstance(query, str) or not query.strip():
+        return _cache_rejection("INVALID_QUERY: query must be a nonblank string")
+
+    guard = input_guardrail_node(EvidenceFlowState(query=query, target_version=version))
+    if guard["is_abstained"]:
+        return _cache_rejection(f"{guard['abstention_code']}: {guard['abstention_reason']}")
+    if any(pattern.search(ans_text) for pattern in INJECTION_PATTERNS):
+        return _cache_rejection("INJECTION: answer contains a detected instruction override")
+
     parsed_citations: List[CachedCitation] = []
     for c in cits_list:
         if isinstance(c, CachedCitation):
@@ -230,14 +273,55 @@ def write_cache(
         elif isinstance(c, dict):
             pid = c.get("passage_id") or c.get("chunk_id", "")
             chash = c.get("chunk_hash") or c.get("sha256", "")
-            parsed_citations.append(
-                CachedCitation(
-                    passage_id=pid,
-                    chunk_hash=chash,
-                    source_url=c.get("source_url", ""),
-                    title=c.get("title", ""),
+            try:
+                parsed_citations.append(
+                    CachedCitation(
+                        passage_id=pid,
+                        chunk_hash=chash,
+                        source_url=c.get("source_url", ""),
+                        title=c.get("title", ""),
+                    )
                 )
-            )
+            except ValidationError:
+                return _cache_rejection("INVALID_CITATION: citation fields must be strings")
+        else:
+            return _cache_rejection("INVALID_CITATION: every citation must be an object")
+
+    valid, reason, _ = validate_cache_hit(parsed_citations, get_corpus_database())
+    if not valid:
+        assert reason is not None
+        return _cache_rejection(reason)
+
+    client = get_evidence_qdrant_client()
+    passages: List[Dict[str, Any]] = []
+    for citation in parsed_citations:
+        passage = client.get_passage(citation.passage_id)
+        if not passage or passage.get("status") != "success" or passage.get("chunk_id") != citation.passage_id:
+            return _cache_rejection(f"PASSAGE_UNAVAILABLE: cannot inspect '{citation.passage_id}'")
+        if passage.get("version") != version:
+            return _cache_rejection(f"PASSAGE_VERSION_MISMATCH: '{citation.passage_id}' is outside version {version}")
+        content = passage.get("content")
+        if not isinstance(content, str) or not content.strip():
+            return _cache_rejection(f"INVALID_PASSAGE: '{citation.passage_id}' lacks content")
+        # Recheck the fetched snapshot in case it changed after the initial hash lookup.
+        if passage.get("sha256") != citation.chunk_hash:
+            return _cache_rejection(f"HASH_MISMATCH: '{citation.passage_id}' changed before write verification")
+        if any(pattern.search(content) for pattern in INJECTION_PATTERNS):
+            return _cache_rejection(f"INJECTION: detected instruction override in '{citation.passage_id}'")
+        passages.append(passage)
+
+    answer_citations = extract_citations(ans_text, passages)
+    if {c.chunk_id for c in answer_citations} != {c.passage_id for c in parsed_citations}:
+        return _cache_rejection("CITATION_MISMATCH: answer markers must match the supplied evidence IDs")
+    verified = verifier_node(EvidenceFlowState(
+        query=query,
+        target_version=version,
+        draft_answer=ans_text,
+        citations=answer_citations,
+        retrieved_passages=passages,
+    ))
+    if not verified["l1_passed"] or verified["is_abstained"]:
+        return _cache_rejection(f"{verified['abstention_code']}: {verified['abstention_reason']}")
 
     entry = cm.set_exact(
         query=query,

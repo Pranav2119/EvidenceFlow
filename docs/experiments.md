@@ -4,6 +4,27 @@ This document tracks all empirical evaluation runs, benchmark datasets, ablation
 
 > **Validity notice:** Historical entries below are preserved as records, not re-certified results. Review found cache-contaminated baseline calls, incorrect value scoring, and unsupported non-inferiority success claims. Do not use those historical comparisons as current resume evidence until the affected runs and methods have been revalidated.
 
+## Cache Evidence Validation and MCP Boundary Repair (2026-11-26)
+
+### Before: Recorded Before Validation Changes
+- **Reference:** literal-key fix `4facf10`, documented in `a2b09f5`; [CI run 45660978685](https://github.com/Pranav2119/EvidenceFlow/actions/runs/45660978685) passed 318 tests and all metric gates. Its v1.1 uncached development report has 40/40 decision agreement and 24/24 expected-value presence; dataset fingerprint `1274d3fdd110da2987f51cd9d890f82a74941bb59955c54b8ff42900dd7316dd`.
+- **Local baseline:** 76 existing cache/MCP tests passed, with two service-reaching workflow tests reserved for CI. External audit writes were mocked. The in-process pytest wrapper emitted one import-rewrite warning, not an application failure.
+- **Defects:** missing cached hashes skip equality checks; MCP reads bypass live validation; MCP writes accept malformed or unchecked evidence/answers. The role decorator records successful authorization as operation success even when a tool reports an error.
+- **Approved scope:** reject absent/blank/non-string hashes; validate and evict bad MCP hits; reject malformed writes and check live passage hashes/scope plus the existing deterministic verifier and input guards. No LLM calls, new dependencies, or authentication services. Matching hashes establish identity/freshness, not semantic correctness.
+- **Controls:** preserve cache-hit routing, current v1.1 labels/corpus, literal v2 key rules, and fresh-answer behavior. Known deeper verifier gaps, semantic-cache safety, caller-role authentication, and best-effort audit persistence remain separate limitations.
+- **Verification plan:** synthetic malformed/hashless/stale cache tests, MCP direct/protocol rejection tests, existing collision/staleness controls, then full CI and the unchanged development benchmark after approval.
+
+### Local After-Checks
+- Focused reproduction: **26 failed, 33 passed, 2 deselected** before implementation. After repair, the combined key/manager/validator/MCP/failure-test selection reports **103 passed, 2 deselected**. Both deselected service-reaching workflow tests remain enabled in full CI.
+- Cached and live hashes must be nonblank strings. A malformed cached hash is rejected before corpus lookup; a missing hash in any citation rejects the whole hit. No missing hash is silently filled from the current corpus.
+- A hashless entry is evicted by its exact key without evicting a valid sibling citing the same passage. Stale/deleted live passages retain existing passage-based eviction. Unavailable evidence cannot produce a validated hit.
+- MCP reads now call the shared live-hash validator, return an explicit rejection without answer content, and evict bad entries. Their latency field includes validation rather than only dictionary lookup.
+- MCP writes validate payload shape, existing input/injection rules, live passage identity/version/content/hash, citation-marker consistency, and the unchanged deterministic verifier before storing. A second comparison checks the fetched passage hash in case it changed after the first lookup.
+- Direct and in-memory MCP protocol tests show that a `9999999` replacement against evidence saying `100` is rejected without overwriting the valid answer, and that a later live-hash change causes read rejection. Existing dictionary payload and citation aliases still work.
+- Rejection results reach the audit wrapper with `status=rejected` and an error reason. Audit durability remains best-effort; the tests mock database writes rather than claiming persistence.
+- Production code changed only in the shared cache validator and memory/cache MCP server. Prompts, retrieval, answer generation, verifier rules, v2 key semantics, corpus, and v1.1 labels remain unchanged.
+- These are targeted checks, not a universal cache-safety or semantic-entailment guarantee. Digest format/recomputation, caller authentication, semantic-cache correctness, and known verifier weaknesses remain separate. Full CI and post-change development results are pending at this preparation stage.
+
 ## Literal Cache-Key Identity Repair (2026-11-25)
 
 ### Before: Recorded Before Changing Cache Logic

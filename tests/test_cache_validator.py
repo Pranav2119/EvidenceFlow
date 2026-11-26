@@ -60,6 +60,63 @@ def test_exact_hit_validation_success():
     assert stale == []
 
 
+@pytest.mark.parametrize("cached_hash", [None, "", " \t", 123])
+def test_missing_or_invalid_cached_hash_is_rejected_before_lookup(cached_hash):
+    db = MagicMock()
+    db.get_chunk_hash.return_value = "live_hash"
+    valid, reason, stale = validate_cache_hit(
+        [{"passage_id": "chunk1", "chunk_hash": cached_hash}], db,
+    )
+    assert valid is False
+    assert "INVALID_CACHED_HASH" in reason
+    assert stale == []
+    db.get_chunk_hash.assert_not_called()
+
+
+@pytest.mark.parametrize("live_hash", ["", " \t", 123])
+def test_missing_or_invalid_live_hash_cannot_validate_a_hit(live_hash):
+    db = MagicMock()
+    db.get_chunk_hash.return_value = live_hash
+    valid, reason, stale = validate_cache_hit(
+        [CachedCitation(passage_id="chunk1", chunk_hash="cached_hash")], db,
+    )
+    assert valid is False
+    assert "INVALID_LIVE_HASH" in reason
+    assert stale == ["chunk1"]
+
+
+def test_gatekeeper_evicts_hashless_entry_without_evicting_valid_sibling(reset_singletons):
+    cm, db = reset_singletons
+    db.set_chunk_hash("chunk1", "live_hash")
+    bad = cm.set_exact(
+        "Hashless query", "Unverifiable answer",
+        [CachedCitation(passage_id="chunk1", chunk_hash="")], "16",
+    )
+    good = cm.set_exact(
+        "Valid query", "Verified sibling",
+        [CachedCitation(passage_id="chunk1", chunk_hash="live_hash")], "16",
+    )
+
+    result = cache_gatekeeper_node(EvidenceFlowState(query="Hashless query", target_version="16"))
+    assert result["cache_hit"] is False
+    assert result["audit_trail"][-1]["action"] == "cache_rejection"
+    assert "INVALID_CACHED_HASH" in result["audit_trail"][-1]["rejection_reason"]
+    assert bad.key not in cm._l1_exact
+    assert good.key in cm._l1_exact
+    assert cache_gatekeeper_node(EvidenceFlowState(query="Valid query", target_version="16"))["cache_hit"] is True
+
+
+def test_every_cached_citation_requires_a_hash():
+    db = InMemoryCorpusDatabase({"first": "h1", "second": "h2"})
+    valid, reason, _ = validate_cache_hit([
+        CachedCitation(passage_id="first", chunk_hash="h1"),
+        CachedCitation(passage_id="second", chunk_hash=""),
+    ], db)
+    assert valid is False
+    assert "INVALID_CACHED_HASH" in reason
+    assert "second" in reason
+
+
 def test_hash_mismatch_staleness_rejection():
     """Simulates documentation patch: live hash != cached hash -> rejection."""
     db = InMemoryCorpusDatabase({

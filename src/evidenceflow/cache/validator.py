@@ -149,7 +149,7 @@ def validate_cache_hit(
       1. Guardrail version parity (current runtime vs cached).
       2. Config version parity (current runtime vs cached).
       3. Citation non-emptiness (ungrounded answers cannot be cached).
-      4. Live chunk SHA-256 hash match for EVERY cited passage.
+      4. Nonblank string hashes and a live match for EVERY cited passage.
     """
     # 1. Guardrail version check
     if guardrail_version is not None and guardrail_version != current_guardrail_version:
@@ -168,18 +168,24 @@ def validate_cache_hit(
     # 4. Deterministic SHA-256 hash validation
     for item in cached_citations:
         pid, cached_hash = extract_citation_info(item)
-        if not pid:
-            return False, "INVALID_CITATION: missing passage_id", []
+        if not isinstance(pid, str) or not pid.strip():
+            return False, "INVALID_CITATION: passage_id must be a nonblank string", []
+
+        if not isinstance(cached_hash, str) or not cached_hash.strip():
+            return False, f"INVALID_CACHED_HASH: passage '{pid}' requires a nonblank stored hash", []
 
         live_hash = db.get_chunk_hash(pid)
 
         # Chunk missing in live corpus (deleted/renamed)
         if live_hash is None:
             stale_passages.append(pid)
-            return False, f"PASSAGE_NOT_FOUND: passage '{pid}' no longer exists in corpus", stale_passages
+            return False, f"PASSAGE_NOT_FOUND: passage '{pid}' cannot be confirmed in the live corpus", stale_passages
+
+        if not isinstance(live_hash, str) or not live_hash.strip():
+            return False, f"INVALID_LIVE_HASH: passage '{pid}' lacks a usable live hash", [pid]
 
         # Chunk hash mismatch (documentation patched/updated)
-        if cached_hash and live_hash != cached_hash:
+        if live_hash != cached_hash:
             stale_passages.append(pid)
             return (
                 False,
