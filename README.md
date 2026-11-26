@@ -17,6 +17,19 @@ The baseline path combines:
 3. **L1 & L1.5 Citation and Value Checks**: Checks cited passages and nearby quantity/setting matches. Known validation gaps remain under review; passing these checks is not proof that every claim is supported.
 4. **Step Ledger & PostgreSQL Checkpointing**: Stores conversation checkpoints through `PostgresSaver` and records step and claim-evidence data in PostgreSQL. Token-accounting coverage still needs validation before total-cost claims.
 
+The deterministic verifier checks complete value tokens, including single-digit
+counts and supported number-word/unit equivalents: `8MB` is not `128MB`, and `1`
+is not `-1` or `0.1`. Explicit version/section labels, list numbering, and citation
+IDs are excluded as metadata; genuine counts such as a default of `16` are checked.
+Substantive text after the final citation is rejected with `FAKE_CITATION`, while
+punctuation and Markdown closing characters alone are allowed. Put each citation
+after the claim it supports; uncited explanatory or polite footers are not exempt.
+
+Comparative offline fallback renders each version's source as a separately cited
+answer and abstains if either source lacks the requested attribute. It does not
+append an unchecked contradiction-analysis explanation. These remain rule-based
+presence/binding checks, not a complete semantic-entailment judgment.
+
 ---
 
 ## Architecture Overview

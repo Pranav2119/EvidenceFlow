@@ -219,3 +219,47 @@ def test_related_parameter_value_still_fails_verification(overlapping_cost_limit
     ))
     assert verified["is_abstained"] is True
     assert verified["abstention_code"] == "VALUE_MISMATCH"
+
+
+@pytest.mark.parametrize("has_default", [True, False])
+def test_comparison_fallback_cites_each_versions_supported_claim(has_default):
+    passages = [
+        {
+            "chunk_id": "pg14-synthetic-cost",
+            "version": "14",
+            "title": "synthetic_cost_limit (integer)",
+            "content": "Parameter: synthetic_cost_limit (integer)\n\nThe default value is 20.",
+        },
+        {
+            "chunk_id": "pg16-synthetic-cost",
+            "version": "16",
+            "title": "synthetic_cost_limit (integer)",
+            "content": "Parameter: synthetic_cost_limit (integer)\n\n" + (
+                "The default value is 0." if has_default else "Controls the accumulated cost before sleeping."
+            ),
+        },
+    ]
+    query = "Compare the default of synthetic_cost_limit in PostgreSQL 14 and 16."
+    answer, code = deterministic_fallback_answer(query, "16", passages, contradiction_details={
+        "relationship_type": "SUPERSEDES",
+        "subject_chunk_id": "pg16-synthetic-cost",
+        "target_chunk_id": "pg14-synthetic-cost",
+        "subject_version": "16",
+        "target_version": "14",
+        "reason": "Unverified explanation claims a default of 9999999.",
+    })
+    if not has_default:
+        assert code == "NO_SUBSTANTIVE_EVIDENCE"
+        return
+    assert code is None
+    assert "9999999" not in answer
+    assert "20" in answer and "0" in answer
+    verified = verifier_node(EvidenceFlowState(
+        query=query, target_version="16", draft_answer=answer,
+        retrieved_passages=passages, citations=extract_citations(answer, passages),
+    ))
+    assert verified["l1_passed"] is True
+    assert verified["is_abstained"] is False
+    assert {citation.chunk_id for citation in verified["citations"]} == {
+        "pg14-synthetic-cost", "pg16-synthetic-cost",
+    }

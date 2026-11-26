@@ -78,3 +78,12 @@ def test_multi_digit_decimals_preserved_and_breadcrumbs_stripped():
     assert "20.10" not in b_extracted
     assert "20.5" not in b_extracted
     assert "10.5" in b_extracted
+
+
+def test_partial_value_cannot_borrow_another_clauses_attribute():
+    missing, error = verify_statement_value_presence(
+        "The maximum is 128MB, but the default is 8MB.",
+        "Parameter: synth_buffer (integer)\n\nThe maximum is 128MB. The default is 64MB.",
+    )
+    assert "8mb" in missing
+    assert error is not None

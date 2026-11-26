@@ -11,8 +11,11 @@ import pytest
 from evidenceflow.graph.nodes.verifier import (
     extract_claimed_values,
     split_sentences_safely,
+    split_answer_into_citation_statements,
     verify_statement_value_presence,
+    verifier_node,
 )
+from evidenceflow.state import Citation, EvidenceFlowState
 
 
 def test_sentence_splitter_preserves_decimals_negatives_and_abbreviations():
@@ -110,3 +113,85 @@ def test_section_numbers_and_preambles_never_extracted_as_claimed_values():
     vals3 = extract_claimed_values(text_with_nbsp)
     assert "18.3" not in vals3
     assert vals3 == ["64mb"]
+
+
+@pytest.mark.parametrize(
+    "claim, evidence",
+    [
+        ("8MB", "128MB"),
+        ("1", "-1"),
+        ("1", "0.1"),
+        ("100", "1100"),
+        ("7", "3"),
+        ("16", "14"),
+        ("seven", "three"),
+    ],
+)
+def test_complete_claim_values_cannot_match_fragments_or_different_counts(claim, evidence):
+    missing, error = verify_statement_value_presence(
+        f"synth_limit defaults to {claim}.",
+        f"Parameter: synth_limit (real)\n\nThe default is {evidence}.",
+    )
+    assert missing
+    assert error is not None
+
+
+@pytest.mark.parametrize(
+    "claim, evidence",
+    [
+        ("3", "three"),
+        ("1min", "60 s"),
+        ("1024kB", "1 MB"),
+        ("100", "100 connections"),
+    ],
+)
+def test_complete_value_checks_preserve_units_words_and_count_descriptions(claim, evidence):
+    missing, error = verify_statement_value_presence(
+        f"synth_limit defaults to {claim}.",
+        f"Parameter: synth_limit (real)\n\nThe default is {evidence}.",
+    )
+    assert missing == []
+    assert error is None
+
+
+def test_single_digit_and_version_like_counts_are_not_dropped():
+    assert extract_claimed_values(
+        "1. In PostgreSQL 16, synth_limit defaults to 7 [^pg16-reference-999]."
+    ) == ["7"]
+    assert extract_claimed_values("The default is 14.") == ["14"]
+    assert extract_claimed_values("The default is seven.") == ["7"]
+
+
+@pytest.mark.parametrize("suffix", [". It never needs a restart.", "\n\nThe maximum is 7."])
+def test_uncited_suffix_is_retained_and_rejected(suffix):
+    answer = "The default is 200 [^chunk1]" + suffix
+    statements = split_answer_into_citation_statements(answer)
+    assert statements[-1][1] == []
+    result = verifier_node(EvidenceFlowState(
+        query="What is synth_limit?",
+        draft_answer=answer,
+        retrieved_passages=[{"chunk_id": "chunk1", "content": "The default is 200."}],
+        citations=[Citation(chunk_id="chunk1", doc_name="doc", section="Settings", quote="")],
+    ))
+    assert result["l1_passed"] is False
+    assert result["is_abstained"] is True
+    assert result["abstention_code"] == "FAKE_CITATION"
+    assert "uncited" in result["abstention_reason"].lower()
+
+
+@pytest.mark.parametrize("ending", [".\n", "**.", " [^chunk2]."])
+def test_cited_answers_keep_punctuation_markdown_and_adjacent_citations(ending):
+    result = verifier_node(EvidenceFlowState(
+        query="What is synth_limit?",
+        draft_answer="The default is 200 [^chunk1]" + ending,
+        retrieved_passages=[
+            {"chunk_id": "chunk1", "content": "The default is 200."},
+            {"chunk_id": "chunk2", "content": "The default is 200."},
+        ],
+        citations=[
+            Citation(chunk_id="chunk1", doc_name="doc", section="Settings", quote=""),
+            Citation(chunk_id="chunk2", doc_name="doc", section="Settings", quote=""),
+        ],
+    ))
+    assert result["l1_passed"] is True
+    assert result["is_abstained"] is False

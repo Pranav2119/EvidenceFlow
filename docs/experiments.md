@@ -4,6 +4,27 @@ This document tracks all empirical evaluation runs, benchmark datasets, ablation
 
 > **Validity notice:** Historical entries below are preserved as records, not re-certified results. Review found cache-contaminated baseline calls, incorrect value scoring, and unsupported non-inferiority success claims. Do not use those historical comparisons as current resume evidence until the affected runs and methods have been revalidated.
 
+## Verifier Value and Trailing-Citation Repair (2026-11-26)
+
+### Before: Recorded Before Verification Changes
+- **Reference:** `97fb050`, documented in `c9b9703`; [CI run 45809498665](https://github.com/Pranav2119/EvidenceFlow/actions/runs/45809498665) passed 345 tests and all gates. The verified v1.1 development capture has 40/40 decision agreement, 24/24 expected-value presence, and 16/16 required refusals across 40 questions / 120 timed observations.
+- **Dataset fingerprint:** `1274d3fdd110da2987f51cd9d890f82a74941bb59955c54b8ff42900dd7316dd`. Corpus, labels, prompts, and retrieval settings will remain unchanged.
+- **Local baseline:** all nine existing pure verifier tests passed before adding regressions. These tests do not exercise the known `8MB`/`128MB`, ignored single-digit, or uncited-tail failures.
+- **Approved contract:** compare complete value tokens with supported unit/number-word equivalences; distinguish explicit version/section metadata from genuine numeric counts; retain and reject substantive text after the final citation. Punctuation and Markdown closing characters alone remain allowed.
+- **Coupled callers:** the evaluation scorer already has a complete-token pattern; share it rather than duplicate it. The deterministic judge consumes the same extracted values and needs equivalent matching to avoid introducing false rejections after extraction is fixed.
+- **Safety consequence:** uncited polite footers or cross-version explanation text are not silently exempted. The existing cross-version fallback places its reasoning after the final citation; it can now be refused until its claims are correctly supported/cited. Do not move a citation solely to bypass verification.
+- **Plan:** failing synthetic regressions first, then focused tests plus full CI and the unchanged development benchmark. This is not a new semantic-entailment judge or proof that every possible factual error is detected.
+
+### Local After-Checks
+- Initial regressions: **14 failed, 24 passed**. They reproduce partial-token acceptance, ignored `7` / `16` / number-word claims, citation IDs incorrectly treated as values, omitted uncited tails, and inconsistent deterministic-judge matching.
+- Complete-token matching is now shared with the existing evaluation scorer and deterministic judge. Attribute binding no longer uses substring or digit-fragment fallbacks. Ordinary descriptions such as `100 connections` retain their word boundary; real units and number words still normalize.
+- Single digits are checked. Explicit version/section markers and citation IDs are removed by context, rather than globally ignoring values `14`, `15`, and `16`. A genuine default of `16` must appear in the evidence.
+- The citation splitter retains substantive suffix text with an empty citation list; the verifier rejects it and records the text in its audit trail. Punctuation, closing Markdown, and existing adjacent/multiple citations remain supported. MCP write verification inherits the stricter rejection.
+- A coupled cross-version fallback defect required an output adjustment: it previously appended the unverified analysis reason after the final citation. Two additional synthetic cases failed before that adjustment. It now reuses ordinary single-source extraction for each version, citing each claim separately and refusing if either requested attribute is absent. It does not repeat a supplied analysis reason as evidence.
+- After the full local patch, **95 focused tests passed** across verifier, scorer, deterministic-judge, fallback-writer, and isolated MCP cases. No Docker services or LLM calls were required.
+- Downloaded the verified `97fb050` control artifact and replayed all **72 accepted answer observations** against the new verifier using the committed passages: **zero new rejections**. This is a component replay, not a replacement for full pipeline evaluation.
+- Prompts, retrieval scores/thresholds, corpus, v1.1 labels, cache keys, and live model selection are unchanged. Full CI and a same-dataset post-change capture remain pending.
+
 ## Cache Evidence Validation and MCP Boundary Repair (2026-11-26)
 
 ### Before: Recorded Before Validation Changes

@@ -107,16 +107,26 @@ def deterministic_fallback_answer(
     if not passages:
         return FallbackAnswer(f"Insufficient evidence in the PostgreSQL {version} documentation.", "NO_SUBSTANTIVE_EVIDENCE")
 
-    # If cross-version contradiction/evolution was detected, synthesize comparative answer directly
+    # Render each source separately so its values are bound to its own citation.
     if contradiction_details and contradiction_details.get("relationship_type") in {"SUPERSEDES", "CONTRADICTS"}:
         subj_id = contradiction_details.get("subject_chunk_id")
         tgt_id = contradiction_details.get("target_chunk_id")
-        reason = contradiction_details.get("reason", "")
         subj_v = contradiction_details.get("subject_version", version)
         tgt_v = contradiction_details.get("target_version", "")
         if subj_id and tgt_id:
-            ans = f"In PostgreSQL {subj_v}, the setting is documented under [^{subj_id}]. In PostgreSQL {tgt_v}, it is documented under [^{tgt_id}]. {reason}"
-            return FallbackAnswer(ans, None)
+            source_answers = []
+            for passage_id, source_version in ((subj_id, subj_v), (tgt_id, tgt_v)):
+                source = next((p for p in passages if p.get("chunk_id") == passage_id), None)
+                if source is None:
+                    return FallbackAnswer(
+                        f"Insufficient evidence in the PostgreSQL {version} documentation.",
+                        "NO_SUBSTANTIVE_EVIDENCE",
+                    )
+                answer, code = deterministic_fallback_answer(query, source_version, [source])
+                if code:
+                    return FallbackAnswer(answer, code)
+                source_answers.append(answer)
+            return FallbackAnswer("\n\n".join(source_answers), None)
 
     # Identify recognized setting names mentioned in query
     from evidenceflow.memory.corpus_settings import get_corpus_settings

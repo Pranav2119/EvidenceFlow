@@ -1320,3 +1320,35 @@ Calling proprietary LLMs inside CI builds introduces cost, rate-limiting, and ne
 - Median/P95 changed from 30.4/65.9 ms to 32.6/89.0 ms across separate CI jobs. Do not infer a cache-validation performance effect from cache-disabled runs.
 - No local Docker services were needed or contacted. Temporary report downloads were cleaned up; original data and the frozen split stayed untouched.
 - This is a verified boundary repair, not authentication or proof that the existing verifier catches every unsupported claim.
+
+---
+
+## Session 26: Complete Values and Complete Citation Coverage (Draft for Author Review)
+
+**Date:** 2026-11-26
+
+### Starting Point and Count
+- The review tracker contains 22 actionable finding groups: nine closed and 13 open or partially resolved at the start of this repair. One additional suspected AnyIO issue was disproved. These are groups, not a guarantee that all possible defects have been found.
+- The current task is the verifier group. The recorded v1.1 baseline at `97fb050` has 40/40 decision agreement and 24/24 expected-value presence; its full CI passed 345 tests.
+
+### What Was Wrong
+- `8MB` could match the end of `128MB`. The number extractor also skipped unitless single digits and every `14`, `15`, or `16`, even when those numbers were actual parameter values.
+- Citation grouping stopped at the final marker, dropping later statements. An answer could cite `Default is 100` and then append an unsupported restart claim without verification.
+- Strict token matching also exposed a normalizer issue: blindly joining a number to any following word turns `100 connections` into `100connections`.
+
+### Repairs and Examples
+- Share complete-token matching across verifier, scorer, and deterministic judge. Normalize known units/number words, but preserve ordinary count descriptions. Attribute matching cannot borrow a value fragment from another clause.
+- Remove citation IDs and explicit version/section/list metadata before extraction. Check real numeric counts, including `7`, a default of `16`, and `seven`; preserve `1min` / `60s` and `1024kB` / `1MB` equivalences.
+- Retain substantive text after the final citation and reject it with the existing `FAKE_CITATION` code, with the text recorded in the verifier audit. Plain punctuation and Markdown endings still pass.
+- The existing cross-version fallback had an uncited explanation. Rather than waive verification, reuse single-source extraction for each version so each claim has its own citation. If either source omits the requested default, abstain. A supplied analysis reason claiming `9999999` must not replace source values `20` and `0`.
+
+### Verification and Limits
+- Existing baseline: nine pure verifier tests passed. New regressions: 14 failed / 24 passed before implementation. Two later comparison-format tests also failed before their coupled repair.
+- After the changes: **95 focused local checks passed**. All **72 accepted development answer observations** replayed against the new verifier still passed, using the original retrieved passages.
+- Local tests use synthetic data or saved development outputs and mocked services; the user's Docker machine is not needed. Full integration/benchmark verification will use GitHub Actions after approval.
+- No prompt, retrieval threshold, corpus, dataset label, cache key, or live-model configuration changed. The rules are still presence/binding checks, not proof of semantic truth; judge revision re-verification and the other tracked groups remain separate work.
+
+### Explain Back and Shutdown
+- Why must a default of `16` be checked even though PostgreSQL version labels often contain `16`?
+- Why is citing one correct sentence insufficient to validate an uncited sentence that follows it?
+- No local application/database services were started. Restart running Python/MCP processes after pulling an approved update; no database reset is needed.

@@ -123,6 +123,20 @@ def test_l2_judge_deterministic_rejected_on_hallucination():
     assert "9999" in result["reasoning"]
 
 
+@pytest.mark.parametrize(
+    "claim, evidence, verdict",
+    [("8MB", "128MB", "REJECTED"), ("3", "three", "AFFIRMED"), ("60s", "1min", "AFFIRMED")],
+)
+def test_deterministic_judge_uses_complete_equivalent_values(claim, evidence, verdict):
+    result = evaluate_l2_deterministic(
+        query="What is synth_limit?",
+        draft_answer=f"synth_limit defaults to {claim} [^chunk1].",
+        passages=[{"chunk_id": "chunk1", "content": f"synth_limit defaults to {evidence}."}],
+        citations=[{"chunk_id": "chunk1"}],
+    )
+    assert result["verdict"] == verdict
+
+
 def test_l2_judge_node_bypassed_for_standard_query():
     """
     Verifies that when should_invoke_l2_judge returns False, the node

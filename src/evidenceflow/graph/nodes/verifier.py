@@ -1,6 +1,6 @@
 """
 verifier.py: Deterministic L1 Citation Existence and L2 Value-Presence & Proximity Verifier.
-Executes pure Python verification (ZERO LLM calls) to guarantee:
+Performs pure Python checks (ZERO LLM calls) for:
   1. Citation Existence: Every cited chunk ID exists in retrieved context.
   2. Citation Completeness: Ungrounded statements with zero citations are caught.
   3. L1.5/L2 Value & Proximity Presence: Numeric parameters, units, and enum values cited
@@ -8,6 +8,7 @@ Executes pure Python verification (ZERO LLM calls) to guarantee:
   4. Unit Equivalence: Treats equivalent units identically (e.g. 1min == 60s, 1024kB == 1MB).
   5. Setting Association Check: Prevents multi-value chunk spoofing where a chunk mentions
      multiple numbers (e.g. 200 and 400) and the LLM cites the wrong one for a setting.
+These are deterministic presence/binding checks, not independent semantic entailment.
 """
 
 import re
@@ -24,6 +25,11 @@ RECOGNIZED_ENUM_VALUES = {
     "read committed",
     "read uncommitted",
 }
+
+
+def value_token_pattern(value: str) -> str:
+    """Match a complete value without borrowing digits from signs or decimals."""
+    return r"(?<![\w.+-])" + re.escape(value) + r"(?![\w+-]|[.,]\d)"
 
 
 def get_equivalent_quantities(val: str) -> Set[str]:
@@ -88,8 +94,10 @@ def extract_claimed_values(statement: str) -> List[str]:
     Only extracts boolean/state values when tied to a parameter name or 'default is' patterns [Rule f, j].
     Strips citation preambles and section references (e.g. 20.5., 20.10., E.16.2.) before extraction.
     """
-    # Strip citation preamble, breadcrumbs, and section numbers
-    stmt_clean = re.sub(r"^According to PostgreSQL \d+ documentation on [^:]+:\s*", "", statement, flags=re.IGNORECASE)
+    # Strip metadata before extracting values, rather than ignoring particular numbers.
+    stmt_clean = re.sub(r"\[\^[^\]]+\]", "", statement)
+    stmt_clean = re.sub(r"^\s*\d+[.)]\s+", "", stmt_clean, flags=re.MULTILINE)
+    stmt_clean = re.sub(r"^According to PostgreSQL \d+ documentation on [^:]+:\s*", "", stmt_clean, flags=re.IGNORECASE)
     stmt_clean = re.sub(r"^In PostgreSQL \d+, [^:]+ is documented under [^.\n]+(?:\.|\n)+", "", stmt_clean, flags=re.IGNORECASE)
     # Strip Section N, Chapter N, Part N
     stmt_clean = re.sub(r"\b(?:section|chapter|part|reference|references|ref)\s+[A-Za-z0-9.]+\b\.?", "", stmt_clean, flags=re.IGNORECASE)
@@ -101,25 +109,21 @@ def extract_claimed_values(statement: str) -> List[str]:
     stmt_clean = re.sub(r"\b\d+\.\d+\.\d+(?:\.\d+)*\.?", "", stmt_clean)
     # Strip section numbers with trailing dot when followed by capitalized words (breadcrumbs) e.g. 20.5. Resource Consumption
     stmt_clean = re.sub(r"\b\d+\.\d+\.\s+(?=[A-Z])", "", stmt_clean)
+    stmt_clean = re.sub(
+        r"\b(?:postgres(?:ql)?|pg|version)\s*\d+(?:\.\d+)*\b", "", stmt_clean, flags=re.IGNORECASE,
+    )
+    stmt_clean = normalize_text(stmt_clean)
     stmt_lower = stmt_clean.lower()
     filtered = []
 
-    # 1. Numeric quantities with units, negative numbers (-1), decimals (4.0MB), or multi-digit integers
+    # 1. Numeric quantities, including unitless single-digit counts.
     raw_nums = re.findall(
         r"(?<![a-z0-9_])-?\d+(?:\.\d+)?\s*(?:ms|min|kB|MB|GB|TB|pages|bytes|rows|s|h|d)?\b",
         stmt_clean,
         re.IGNORECASE,
     )
     for n in raw_nums:
-        n_clean = n.strip().lower()
-        if n_clean in {"14", "15", "16", "14.", "15.", "16."}:
-            continue
-        has_unit = any(n_clean.endswith(u) for u in ["ms", "min", "kb", "mb", "gb", "tb", "pages", "bytes", "rows", "s", "h", "d"])
-        is_negative = n_clean.startswith("-") and len(n_clean) > 1
-        has_decimal = "." in n_clean
-        is_multi_digit = re.fullmatch(r"\d{2,}", n_clean) is not None
-        if has_unit or is_negative or has_decimal or is_multi_digit:
-            filtered.append(n_clean)
+        filtered.append(n.strip().lower())
 
     # 2. Domain enum values (e.g., 'replica', 'logical', 'minimal')
     for enum_val in RECOGNIZED_ENUM_VALUES:
@@ -174,7 +178,7 @@ def split_answer_into_citation_statements(draft_answer: str) -> List[Tuple[str, 
       - Multi-citation blocks like [^chunk1, ^chunk2]
       - Consecutive citation blocks like [^chunk1] [^chunk2]
     Returns:
-      List of (statement_text, [cited_chunk_ids])
+      List of (statement_text, [cited_chunk_ids]); a substantive uncited tail has no IDs.
     """
     citation_pattern = re.compile(r"\[\^([^\]]+)\]")
     matches = list(citation_pattern.finditer(draft_answer))
@@ -210,6 +214,10 @@ def split_answer_into_citation_statements(draft_answer: str) -> List[Tuple[str, 
         results.append((raw_stmt, cids))
         last_end = end_idx
 
+    tail = draft_answer[last_end:].strip()
+    if any(character.isalnum() for character in tail):
+        results.append((tail, []))
+
     return results
 
 
@@ -237,6 +245,7 @@ def normalize_text(text: str) -> str:
       2. Maps number words + unit names (e.g. 'one second' -> '1s', 'five minutes' -> '5min').
       3. Collapses spaces in units (e.g. '80 mb' -> '80mb', '1 gb' -> '1gb').
       4. Strips parenthesis boundaries around tokens (e.g. '( 1s )' -> '1s').
+      5. Converts standalone number words without merging counts into ordinary words.
     """
     t = re.sub(r"\s+", " ", text.lower()).strip()
 
@@ -248,7 +257,12 @@ def normalize_text(text: str) -> str:
     num_pattern = "|".join(NUMBER_WORDS.keys())
     unit_pattern = "|".join(UNIT_MAP.keys())
     t = re.sub(rf"\b({num_pattern})\s+({unit_pattern})\b", replace_num_word_unit, t)
-    t = re.sub(r"\b(\d+(?:\.\d+)?)\s*([a-z]+)\b", lambda m: f"{m.group(1)}{UNIT_MAP.get(m.group(2), m.group(2))}", t)
+    t = re.sub(
+        r"\b(\d+(?:\.\d+)?)\s*([a-z]+)\b",
+        lambda m: f"{m.group(1)}{UNIT_MAP[m.group(2)]}" if m.group(2) in UNIT_MAP else m.group(0),
+        t,
+    )
+    t = re.sub(rf"\b({num_pattern})\b", lambda m: NUMBER_WORDS[m.group(1)], t)
     t = re.sub(r"\(\s*([a-z0-9]+)\s*\)", r" \1 ", t)
     return re.sub(r"\s+", " ", t).strip()
 
@@ -289,11 +303,7 @@ def verify_statement_value_presence(
         bound_attr = None
         for clause in raw_clauses:
             clause_norm = normalize_text(clause)
-            has_val = any(e in clause_norm or re.search(r"\b" + re.escape(e) + r"\b", clause_norm) for e in equivs_norm)
-            if not has_val:
-                m_dig = re.search(r"\d+", val_clean)
-                if m_dig and re.search(r"\b" + m_dig.group(0) + r"\b", clause_norm):
-                    has_val = True
+            has_val = any(re.search(value_token_pattern(e), clause_norm) for e in equivs_norm)
             if has_val:
                 for attr_name, patterns in attr_keywords.items():
                     if any(re.search(pat, clause_norm) for pat in patterns):
@@ -307,9 +317,8 @@ def verify_statement_value_presence(
             for attr_name, patterns in attr_keywords.items():
                 for pat in patterns:
                     for m_attr in re.finditer(pat, stmt_norm):
-                        m_dig = re.search(r"\d+", val_clean)
-                        if m_dig:
-                            for m_val in re.finditer(r"\b" + m_dig.group(0) + r"\b", stmt_norm):
+                        for equivalent in equivs_norm:
+                            for m_val in re.finditer(value_token_pattern(equivalent), stmt_norm):
                                 dist = abs(m_val.start() - m_attr.start())
                                 if dist < best_dist:
                                     best_dist = dist
@@ -336,7 +345,7 @@ def verify_statement_value_presence(
         matching_sentences = []
         for raw_s, norm_s, pos in zip(raw_sentences, norm_sentences, sentence_positions):
             has_val = any(
-                re.search(r"(?<!\w)" + re.escape(c) + r"\b", norm_s) or c in norm_s
+                re.search(value_token_pattern(c), norm_s)
                 for c in norm_candidates
             )
             if has_val:
@@ -492,6 +501,22 @@ def verifier_node(state: EvidenceFlowState) -> Dict[str, Any]:
     for stmt_text, clause_cids in statements:
         if not stmt_text:
             continue
+
+        if not clause_cids:
+            fail_reason = "L1 Failed: Answer contains uncited text after its final citation."
+            return {
+                "l1_passed": False,
+                "is_abstained": True,
+                "abstention_code": "FAKE_CITATION",
+                "abstention_reason": fail_reason,
+                "audit_trail": existing_audit + [{
+                    "node": "verifier",
+                    "action": "l1_failed_uncited_text",
+                    "code": "FAKE_CITATION",
+                    "statement": stmt_text,
+                    "l1_passed": False,
+                }],
+            }
 
         if len(clause_cids) == 1:
             cid = clause_cids[0]

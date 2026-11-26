@@ -310,6 +310,7 @@ def test_mcp_lookup_rejects_and_evicts_unverifiable_hit(clean_cache, corpus_db, 
         ("Default is 100 [^chunk1].", [{"passage_id": "chunk1", "chunk_hash": ""}], "INVALID_CACHED_HASH"),
         ("Default is 9999999 [^chunk1].", [{"passage_id": "chunk1", "chunk_hash": "h1"}], "VALUE_MISMATCH"),
         ("Default is 100 [^unknown].", [{"passage_id": "chunk1", "chunk_hash": "h1"}], "CITATION_MISMATCH"),
+        ("Default is 100 [^chunk1]. It never needs a restart.", [{"passage_id": "chunk1", "chunk_hash": "h1"}], "FAKE_CITATION"),
     ],
 )
 def test_mcp_write_rejects_invalid_or_unsupported_payload(clean_cache, answer, citations, error_code):

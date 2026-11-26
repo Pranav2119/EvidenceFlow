@@ -24,6 +24,9 @@ from evidenceflow.config import get_settings
 from evidenceflow.state import EvidenceFlowState
 from evidenceflow.graph.nodes.verifier import (
     extract_claimed_values,
+    get_equivalent_quantities,
+    normalize_text,
+    value_token_pattern,
     verify_statement_value_presence,
 )
 
@@ -125,13 +128,13 @@ def evaluate_l2_deterministic(
 
     # Extract claimed values from draft answer
     claimed_values = extract_claimed_values(draft_answer)
-    all_passage_text = " ".join(passage_map.values()).lower()
+    all_passage_text = normalize_text(" ".join(passage_map.values()))
 
     # Check for hallucinated values not in any cited passage
     unsupported_values = []
     for val in claimed_values:
-        val_clean = val.strip().lower()
-        if val_clean not in all_passage_text:
+        variants = {normalize_text(candidate) for candidate in get_equivalent_quantities(val)}
+        if not any(re.search(value_token_pattern(candidate), all_passage_text) for candidate in variants):
             unsupported_values.append(val)
 
     if unsupported_values:

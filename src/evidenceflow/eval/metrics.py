@@ -8,7 +8,7 @@ import hashlib
 import json
 import re
 from typing import Any, Dict, List, Optional, Set
-from evidenceflow.graph.nodes.verifier import get_equivalent_quantities
+from evidenceflow.graph.nodes.verifier import get_equivalent_quantities, value_token_pattern
 
 
 def get_dataset_metadata(dataset: Dict[str, Any]) -> Dict[str, Optional[str]]:
@@ -221,8 +221,7 @@ def check_value_accuracy(
         v_clean = v.strip()
         if not v_clean:
             continue
-        pattern = r"(?<![\w.+-])" + re.escape(v_clean) + r"(?![\w+-]|[.,]\d)"
-        if re.search(pattern, answer_lower):
+        if re.search(value_token_pattern(v_clean), answer_lower):
             return True
 
     return False
